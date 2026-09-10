@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Env vars / secrets
+.env
+
+# Test/eval artifacts
+.pytest_cache/
+.deepeval-cache.json
+.deepeval_telemetry.txt
+deepeval_results/
+temp_test_run_data.json

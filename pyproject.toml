@@ -1,0 +1,36 @@
+[project]
+name = "tennis-booking-eval"
+version = "0.1.0"
+description = "Reliability comparison of a numbered-steps system prompt vs a getNextStep() tool for the same multi-turn workflow (tennis court booking)."
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.2.11",
+    "openai>=1.50.0",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "transitions>=0.9.0",
+]
+
+[project.scripts]
+tennis-chat = "tennis_booking.cli:main"
+tennis-compare = "evals.compare:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "deepeval>=1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "evals"]
+pythonpath = ["src", "."]
+markers = [
+    "eval: live-API agent reliability eval (see evals/decorators.py); skips cleanly without OpenRouter credentials",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tennis_booking", "evals"]
