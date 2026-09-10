@@ -1,4 +1,4 @@
-"""The workflow-step agent: the workflow is encoded as a numbered list of
+"""The workflow agent: the workflow is encoded as a numbered list of
 steps baked into one static system prompt, used unchanged for the whole
 conversation. The model has no state tool -- on every turn it must re-read
 the whole transcript and infer for itself which numbered step to resume from

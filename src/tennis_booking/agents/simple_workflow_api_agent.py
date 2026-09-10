@@ -1,29 +1,30 @@
-"""a2a-fsm-api -- agent-1 (a plain tool-calling loop, no workflow knowledge
-of its own) paired with `FSMAgent` (`fsm_agent/`) as agent-2: a deterministic,
-non-LLM step machine that owns the workflow. Agent-1's only tool,
-`book_tennis_court` (`BOOK_TENNIS_COURT_TOOL_V4`, see
-tools/book_tennis_court_v4.py), takes a single `updates` array of
+"""simple-workflow-api -- agent-1 (a plain tool-calling loop, no workflow
+knowledge of its own) talks to a deterministic workflow API instead of
+tracking the conversation itself: agent-2, `FSMAgent` (`workflow_engine/`), is not
+an LLM at all, but a non-LLM step machine that owns the workflow. Agent-1's
+only tool, `book_tennis_court` (`BOOK_TENNIS_COURT_TOOL`, see
+tools/book_tennis_court.py), takes a single `updates` array of
 `{slot, value}` deltas -- any combination, in one call: a correction to
 something answered earlier, the current node's answer, one or more
 not-yet-reached nodes the user already answered, or several of these at
 once, every slot always legal regardless of which node is currently active.
-See tools/__init__.py's and fsm_agent/__init__.py's docstrings for the full
+See tools/__init__.py's and workflow_engine/__init__.py's docstrings for the full
 rationale behind that schema shape.
 
 `FSMAgent`'s own step-computation engine is `LangGraphStepEngine`
-(`langgraph.graph.StateGraph`, see `fsm_agent/step_engine_langgraph.py`): a
+(`langgraph.graph.StateGraph`, see `workflow_engine/step_engine_langgraph.py`): a
 `route` node whose conditional edges are guarded by `step_is_current`
 (evaluated over `STEPS` in order), with `search_availability`/
 `call_book_court` as tool-action nodes that mutate `BookingState` and loop
 back to `route`. That engine choice is internal to `FSMAgent` -- nothing
-here, or in `BOOK_TENNIS_COURT_TOOL_V4`'s schema, depends on which engine
+here, or in `BOOK_TENNIS_COURT_TOOL`'s schema, depends on which engine
 backs it.
 """
 from __future__ import annotations
 
 from tennis_booking.agents.base import ConversationAgent, ToolCallRecord
-from tennis_booking.fsm_agent import FSMAgent
-from tennis_booking.tools import BOOK_TENNIS_COURT_TOOL_V4
+from tennis_booking.workflow_engine import FSMAgent
+from tennis_booking.tools import BOOK_TENNIS_COURT_TOOL
 from tennis_booking.workflow_steps import GROUNDING_GUIDANCE, STALE_SEARCH_GUIDANCE
 
 BOOK_TOOL_NAME = "book_tennis_court"
@@ -58,7 +59,6 @@ never say or imply otherwise, even right after the user confirms.
 {GROUNDING_GUIDANCE}
 """
 
-
 def create_agent(state=None, client=None) -> ConversationAgent:
     """`client` lets tests inject a fake OpenAI-shaped client; leave it unset
     to use a real one (requires OPENROUTER_API_KEY). `state` is accepted
@@ -79,7 +79,7 @@ def create_agent(state=None, client=None) -> ConversationAgent:
 
     agent = ConversationAgent(
         system_prompt=SYSTEM_PROMPT,
-        tools=[BOOK_TENNIS_COURT_TOOL_V4],
+        tools=[BOOK_TENNIS_COURT_TOOL],
         tool_executors={BOOK_TOOL_NAME: _book_tennis_court},
         client=client,
     )

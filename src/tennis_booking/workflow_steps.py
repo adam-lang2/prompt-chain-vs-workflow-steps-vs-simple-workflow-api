@@ -1,25 +1,34 @@
 """Single source of truth for the tennis-booking workflow.
 
-Both agent architectures implement the *same* workflow defined here:
+Every agent architecture implements the *same* workflow defined here:
 
-- The workflow-step agent (`agents/workflow_step_agent.py`) renders this list
-  into a numbered "Step 1 / Step 2 / ..." system prompt and relies entirely
-  on the model re-reading the transcript each turn to figure out which step
-  it's resuming from. One static prompt, no state tool.
+- The workflow agent (`agents/workflow_agent.py`) renders this list into a
+  numbered "Step 1 / Step 2 / ..." system prompt and relies entirely on the
+  model re-reading the transcript each turn to figure out which step it's
+  resuming from. One static prompt, no state tool.
 - The prompt-chain agent (`agents/prompt_chain_agent.py`) renders a much
   shorter system prompt and instead exposes a `get_next_step()` tool that
-  looks at server-side BookingState (see models.py) and deterministically
-  hands back the next step's instruction each turn -- a fresh, dynamically
-  chained prompt fragment per turn, rather than one fixed prompt.
+  looks at server-side BookingState (see workflow_engine/state.py) and
+  deterministically hands back the next step's instruction each turn -- a
+  fresh, dynamically chained prompt fragment per turn, rather than one fixed
+  prompt.
+- The simple-workflow-api agent (`agents/simple_workflow_api_agent.py`) doesn't
+  give the model a `next_step_for`-shaped tool at all: `FSMAgent`
+  (`workflow_engine/`) is a separate, non-LLM step machine built from these
+  same `STEPS` (see `workflow_engine/step_engine_shared.py`'s
+  `step_is_current`/`step_payload`) that the model's one tool call reports
+  slot updates to.
 
 Changing the workflow (add/remove/reorder a question) means editing this
-file once and both agents pick it up.
+file once and every agent picks it up.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from tennis_booking.models import BookingState
+if TYPE_CHECKING:
+    from tennis_booking.workflow_engine.state import BookingState
 
 
 @dataclass(frozen=True)
@@ -45,6 +54,12 @@ class Step:
     # deliberately NOT chainable -- each always needs a fresh tool round
     # trip once reached.
     chainable: bool = False
+    # True if this step's slot(s) feed search_availability -- i.e. changing
+    # this slot after a search already ran makes that search's results
+    # stale. Marks SEARCH_INPUT_SLOTS below; kept as an explicit per-step
+    # flag rather than "every step before search_availability" so reordering
+    # STEPS can't silently change which slots are search inputs.
+    is_search_input: bool = False
 
 
 STEPS: list[Step] = [
@@ -60,6 +75,7 @@ STEPS: list[Step] = [
             "else in the same message."
         ),
         chainable=True,
+        is_search_input=True,
     ),
     Step(
         key="ask_date",
@@ -74,6 +90,7 @@ STEPS: list[Step] = [
             "ask about it here."
         ),
         chainable=True,
+        is_search_input=True,
     ),
     Step(
         key="ask_surface",
@@ -86,6 +103,7 @@ STEPS: list[Step] = [
             "unless the user explicitly asks."
         ),
         chainable=True,
+        is_search_input=True,
     ),
     Step(
         key="ask_duration",
@@ -98,6 +116,7 @@ STEPS: list[Step] = [
             "that works before moving on."
         ),
         chainable=True,
+        is_search_input=True,
     ),
     Step(
         key="ask_num_players",
@@ -110,6 +129,7 @@ STEPS: list[Step] = [
             "guessing a player count."
         ),
         chainable=True,
+        is_search_input=True,
     ),
     Step(
         key="ask_indoor_outdoor",
@@ -121,6 +141,7 @@ STEPS: list[Step] = [
             "so keep it to a single direct question."
         ),
         chainable=True,
+        is_search_input=True,
     ),
     Step(
         key="search_availability",
@@ -223,6 +244,18 @@ STEPS: list[Step] = [
         ),
     ),
 ]
+
+# The ordered slots a booking must have filled before a court can be booked,
+# and the subset search_availability is called with -- both derived from
+# STEPS above (each step's slot_names, in order) rather than hand-maintained,
+# so the workflow definition stays the single source of truth. See
+# workflow_engine/state.py's BookingState for how these are used.
+REQUIRED_SLOTS: tuple[str, ...] = tuple(
+    slot for step in STEPS for slot in step.slot_names
+)
+SEARCH_INPUT_SLOTS: tuple[str, ...] = tuple(
+    slot for step in STEPS if step.is_search_input for slot in step.slot_names
+)
 
 
 def next_step_for(state: BookingState) -> Step | None:

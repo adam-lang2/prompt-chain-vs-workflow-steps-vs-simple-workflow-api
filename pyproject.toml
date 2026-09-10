@@ -1,14 +1,13 @@
 [project]
 name = "tennis-booking-eval"
 version = "0.1.0"
-description = "Reliability comparison of a numbered-steps system prompt vs a getNextStep() tool for the same multi-turn workflow (tennis court booking)."
+description = "Reliability comparison of three agent architectures (workflow, prompt-chain, simple-workflow-api) for the same multi-turn workflow (tennis court booking)."
 requires-python = ">=3.11"
 dependencies = [
     "langgraph>=1.2.11",
     "openai>=1.50.0",
     "pydantic>=2.7",
     "python-dotenv>=1.0",
-    "transitions>=0.9.0",
 ]
 
 [project.scripts]

@@ -1,28 +1,17 @@
-"""`book_tennis_court` v4 -- used by `agents/a2a_fsm_api.py`, backed by
-`fsm_agent.FSMAgent`. Replaces v3's flat object of ~13 optional properties
-with a single `updates` array of `{slot, value}` deltas. This is a genuine
-shape change, not just a rename: JSON Schema can't express a discriminated
-union keyed on a sibling property (`value`'s type/enum depending on
-`slot`'s value), so `updates[].value` is typed loosely (string | number |
-boolean) and each slot's real type/enum/format constraint -- previously
-enforced by v3's per-property JSON Schema enums -- is now checked by a
-server-side validator in `fsm_agent.agent.SLOT_VALIDATORS` instead. An
-invalid value round-trips through `errors` (keyed by slot name) rather than
-being rejected by the tool-calling layer itself; the tradeoff for that lost
-schema-level guarantee is a single flat update vocabulary that scales to
-more slots without the schema growing a new top-level property each time.
-
-Everything else about the contract is unchanged from v3: any combination of
-slots per call (a correction to something answered earlier, the current
-node's answer, one or more not-yet-reached nodes the user already answered,
-or several of these at once), same closed slot set, same `FSMAgent`
-backend -- now `LangGraphStepEngine` (`langgraph.graph.StateGraph`), see
-`fsm_agent/step_engine_langgraph.py`. The response shape's top-level step-identity
-fields are renamed (`step`/`instruction` -> `current_node`/`instructions`,
-see `fsm_agent.agent._node_payload`) and gain `current_node_slots`; every
-other response field (`upcoming_instructions`, `available_courts`/`note`,
-`booking_summary`, `confirmation_id`/`date`/`time`, `applied`/`errors`)
-carries over from v3 unchanged in name and trigger condition.
+"""`book_tennis_court` -- agent-1's only tool in `agents/simple_workflow_api_agent.py`,
+backed by `workflow_engine.FSMAgent` (`LangGraphStepEngine`, see that
+module's docstring for how it computes the current step). Takes a single
+`updates` array of `{slot, value}` deltas -- any combination, in one call:
+a correction to something answered earlier, the current node's answer, one
+or more not-yet-reached nodes the user already answered, or several of
+these at once, every slot always legal regardless of which node is
+currently active; invalid values round-trip through `errors` (keyed by slot
+name, see `workflow_engine.agent.SLOT_VALIDATORS`) rather than being
+rejected by the tool-calling layer. The response's fields
+(`current_node`/`instructions`/`current_node_slots`,
+`upcoming_instructions`, `available_courts`/`note`, `booking_summary`,
+`confirmation_id`/`date`/`time`, `applied`/`errors`) are present depending
+on the current step.
 """
 from __future__ import annotations
 
@@ -48,7 +37,7 @@ _ALL_SLOTS: tuple[str, ...] = (
     "confirmed",
 )
 
-BOOK_TENNIS_COURT_TOOL_V4: dict[str, Any] = {
+BOOK_TENNIS_COURT_TOOL: dict[str, Any] = {
     "name": "book_tennis_court",
     "description": (
         "Report booking progress to the workflow engine and get back what to "

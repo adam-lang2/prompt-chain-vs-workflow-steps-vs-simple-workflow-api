@@ -5,14 +5,13 @@ correct for every agent architecture, independent of real model behavior.
 """
 from __future__ import annotations
 
-from tennis_booking.agents.a2a_fsm_api import create_agent as create_a2a_fsm_api
 from tennis_booking.agents.prompt_chain_agent import create_agent as create_prompt_chain_agent
-from tennis_booking.agents.prompt_chain_agent_v2 import create_agent as create_prompt_chain_v2_agent
-from tennis_booking.agents.workflow_step_agent import create_agent as create_workflow_step_agent
+from tennis_booking.agents.simple_workflow_api_agent import create_agent as create_simple_workflow_api
+from tennis_booking.agents.workflow_agent import create_agent as create_workflow_agent
 from tests.fakes import FakeOpenAIClient, FakeResponse, FakeToolCall
 
 
-def test_workflow_step_agent_executes_search_then_replies():
+def test_workflow_agent_executes_search_then_replies():
     fake_client = FakeOpenAIClient(
         scripted_responses=[
             FakeResponse(
@@ -32,7 +31,7 @@ def test_workflow_step_agent_executes_search_then_replies():
             FakeResponse(content="Here's what's open downtown."),
         ]
     )
-    agent = create_workflow_step_agent(client=fake_client)
+    agent = create_workflow_agent(client=fake_client)
 
     reply = agent.send_user_message("Book me a clay court downtown on 2026-09-05, outdoor.")
 
@@ -44,31 +43,13 @@ def test_workflow_step_agent_executes_search_then_replies():
     assert len(fake_client.chat.completions.calls) == 2
 
 
-def test_prompt_chain_agent_calls_get_next_step_then_replies():
-    fake_client = FakeOpenAIClient(
-        scripted_responses=[
-            FakeResponse(tool_calls=[FakeToolCall(id="tu_1", name="get_next_step", input={})]),
-            FakeResponse(content="Roughly where would you like to play?"),
-        ]
-    )
-    agent = create_prompt_chain_agent(client=fake_client)
-
-    reply = agent.send_user_message("Hi, I'd like to book a tennis court.")
-
-    assert reply == "Roughly where would you like to play?"
-    assert len(agent.tool_call_log) == 1
-    assert agent.tool_call_log[0].name == "get_next_step"
-    assert agent.tool_call_log[0].result["next_step"] == "ask_area"
-    assert agent.state.area is None
-
-
-def test_prompt_chain_v2_agent_calls_get_next_step_with_minimal_payload():
+def test_prompt_chain_agent_calls_get_next_step_with_minimal_payload():
     # create_agent() generates its own conversation_id and embeds it in the
     # system prompt, so build the agent first (with a throwaway client) to
     # learn that id, then swap in a fake client scripted with a tool call
     # that references it -- exactly what the real model would do after
     # reading the id out of its own system prompt.
-    agent = create_prompt_chain_v2_agent(client=FakeOpenAIClient(scripted_responses=[]))
+    agent = create_prompt_chain_agent(client=FakeOpenAIClient(scripted_responses=[]))
     conversation_id = agent.conversation_id
     assert conversation_id in agent.system_prompt
 
@@ -93,7 +74,7 @@ def test_prompt_chain_v2_agent_calls_get_next_step_with_minimal_payload():
     assert "state" not in record.result
 
 
-def test_a2a_fsm_api_uses_the_structured_schema():
+def test_simple_workflow_api_uses_the_structured_schema():
     # book_tennis_court takes an `updates` array of {slot, value} deltas --
     # setting `area` directly as a slot should land on FSMAgent's state and
     # advance to ask_date, same as any other single-slot update.
@@ -111,7 +92,7 @@ def test_a2a_fsm_api_uses_the_structured_schema():
             FakeResponse(content="What date works for you?"),
         ]
     )
-    agent = create_a2a_fsm_api(client=fake_client)
+    agent = create_simple_workflow_api(client=fake_client)
 
     reply = agent.send_user_message("Hi, I'd like to book a tennis court near downtown.")
 
@@ -122,7 +103,7 @@ def test_a2a_fsm_api_uses_the_structured_schema():
     assert agent.state.area == "downtown"
 
 
-def test_a2a_fsm_api_accepts_multiple_slots_in_one_call():
+def test_simple_workflow_api_accepts_multiple_slots_in_one_call():
     fake_client = FakeOpenAIClient(
         scripted_responses=[
             FakeResponse(
@@ -143,7 +124,7 @@ def test_a2a_fsm_api_accepts_multiple_slots_in_one_call():
             FakeResponse(content="ok"),
         ]
     )
-    agent = create_a2a_fsm_api(client=fake_client)
+    agent = create_simple_workflow_api(client=fake_client)
 
     agent.send_user_message("downtown, Sept 19th, clay")
 
@@ -152,7 +133,7 @@ def test_a2a_fsm_api_accepts_multiple_slots_in_one_call():
     assert result["current_node"] == "ask_duration"
 
 
-def test_a2a_fsm_api_folds_internal_tool_calls_into_the_log():
+def test_simple_workflow_api_folds_internal_tool_calls_into_the_log():
     # Updates that complete the whole workflow up to search_availability
     # make FSMAgent execute search_availability itself, as a side effect of
     # one book_tennis_court call -- that internal call must show up in the
@@ -171,7 +152,7 @@ def test_a2a_fsm_api_folds_internal_tool_calls_into_the_log():
             FakeResponse(content="ok"),
         ]
     )
-    agent = create_a2a_fsm_api(client=fake_client)
+    agent = create_simple_workflow_api(client=fake_client)
     agent.state.date = "2026-09-05"
     agent.state.surface = "clay"
     agent.state.duration_minutes = 90
@@ -184,14 +165,14 @@ def test_a2a_fsm_api_folds_internal_tool_calls_into_the_log():
     assert names == ["search_availability", "book_tennis_court"]
 
 
-def test_prompt_chain_v2_agent_rejects_missing_conversation_id():
+def test_prompt_chain_agent_rejects_missing_conversation_id():
     fake_client = FakeOpenAIClient(
         scripted_responses=[
             FakeResponse(tool_calls=[FakeToolCall(id="tu_1", name="get_next_step", input={})]),
             FakeResponse(content="ok"),
         ]
     )
-    agent = create_prompt_chain_v2_agent(client=fake_client)
+    agent = create_prompt_chain_agent(client=fake_client)
 
     agent.send_user_message("Hi, I'd like to book a tennis court.")
 

@@ -1,23 +1,22 @@
-"""FSMAgent itself -- see `tennis_booking.fsm_agent`'s package docstring
+"""FSMAgent itself -- see `tennis_booking.workflow_engine`'s package docstring
 (`__init__.py`) for the full architectural rationale.
 """
 from __future__ import annotations
 
 import re
 
-from tennis_booking.fsm_agent.step_engine_langgraph import LangGraphStepEngine
-from tennis_booking.fsm_agent.step_engine_shared import FIELD_DEPENDENTS, step_payload
+from tennis_booking.workflow_engine.step_engine_langgraph import LangGraphStepEngine
+from tennis_booking.workflow_engine.step_engine_shared import apply_field_change, step_payload
 from tennis_booking.mock_courts import KNOWN_AREAS
-from tennis_booking.models import BookingState
+from tennis_booking.workflow_engine.state import BookingState
 from tennis_booking.workflow_steps import STEPS, Step
 
 _STEP_BY_KEY: dict[str, Step] = {s.key: s for s in STEPS}
 
 # Which node owns each settable slot -- used both to sort a multi-slot
 # `updates[]` call into WORKFLOW order (not the order the caller listed
-# them in) and to dispatch a slot to its handler. Sorting matters for the
-# same reason step_engine_shared.handle_labeled_batch sorts labeled
-# segments by STEPS.index: a later slot in the same call must see whatever
+# them in) and to dispatch a slot to its handler. Sorting matters because
+# a later slot in the same call must see whatever
 # an earlier one just produced (e.g. the six search-input slots settling
 # before selected_time is validated against fresh results). This is NOT a
 # gate on when a slot may be sent -- every slot here is always legal in any
@@ -166,6 +165,13 @@ def _validate_contact_email(value):
 # handled directly in `handle()` instead (they need access to `self.state`
 # beyond a single value, e.g. resolving against `available_courts` or
 # gating on `ready_to_book()`).
+#
+# This validation lives here, server-side, rather than in BOOK_TENNIS_COURT_TOOL's
+# JSON Schema, because JSON Schema can't key a discriminated union off a
+# sibling property -- `updates[].value`'s real type/enum depends on that same
+# entry's `slot`, which the schema has no way to express. An invalid value
+# round-trips through `errors` instead of being rejected by the tool-calling
+# layer.
 SLOT_VALIDATORS = {
     "area": _validate_area,
     "date": _validate_date,
@@ -180,21 +186,11 @@ SLOT_VALIDATORS = {
 }
 
 
-def _apply_field_change(state: BookingState, field_name: str, value) -> None:
-    setattr(state, field_name, value)
-    dependents = FIELD_DEPENDENTS.get(field_name, frozenset())
-    if "confirmation" in dependents and state.summary_confirmed:
-        state.summary_confirmed = False
-
-
 def _node_payload(state: BookingState, step: Step) -> dict:
     """`step_engine_shared.step_payload`'s response, reshaped for this
     variant's vocabulary: `step`/`instruction` -> `current_node`/
     `instructions` (including inside `upcoming_instructions` entries, which
-    are shaped the same way), plus a new `current_node_slots`. Done here
-    rather than in `step_payload` itself, since that function is shared by
-    HandRolledStepEngine/TransitionsStepEngine (v1/v2/v3) and their tests
-    assert on the original key names.
+    are shaped the same way), plus a new `current_node_slots`.
     """
     base = step_payload(state, step)
     node_key = base.pop("step")
@@ -224,10 +220,10 @@ def _node_error(step: Step, message: str) -> dict:
 
 
 class FSMAgent(LangGraphStepEngine):
-    """Drop-in backend for `book_tennis_court` (v4 schema): identical step
-    computation to HandRolledStepEngine/TransitionsStepEngine/LangGraphStepEngine, but
-    `handle()` takes an already-validated `{"updates": [{"slot", "value"}, ...]}`
-    dict instead of a `payload` string or a flat fields dict.
+    """Backend for `book_tennis_court`: reuses `LangGraphStepEngine`'s step
+    computation, but `handle()` takes an already-validated
+    `{"updates": [{"slot", "value"}, ...]}` dict instead of a free-text
+    payload string.
     """
 
     def _resolve_selected_time(self, selected_time: str, court_hint: str | None) -> tuple[bool, dict, str | None]:
@@ -266,9 +262,9 @@ class FSMAgent(LangGraphStepEngine):
 
         if not updates:
             # Empty is only meaningful as the very first call of the whole
-            # conversation -- see HandRolledStepEngine.handle's identical
-            # rule and its docstring for why a later empty call must error
-            # instead of silently re-showing the same node.
+            # conversation -- a later empty call must error instead of
+            # silently re-showing the same node, which would look like
+            # progress was made when it wasn't.
             if self._called_before:
                 return _node_error(
                     step,
@@ -328,7 +324,7 @@ class FSMAgent(LangGraphStepEngine):
                     continue
                 for field_name, field_value in result_fields.items():
                     if getattr(self.state, field_name) != field_value:
-                        _apply_field_change(self.state, field_name, field_value)
+                        apply_field_change(self.state, field_name, field_value)
                 applied[slot] = value
                 self._advance_past_tool_actions()
                 continue
@@ -351,7 +347,7 @@ class FSMAgent(LangGraphStepEngine):
                     )
                     continue
                 if not self.state.summary_confirmed:
-                    _apply_field_change(self.state, "summary_confirmed", True)
+                    apply_field_change(self.state, "summary_confirmed", True)
                 applied[slot] = True
                 self._advance_past_tool_actions()
                 continue
@@ -361,7 +357,7 @@ class FSMAgent(LangGraphStepEngine):
                 errors[slot] = error
                 continue
             if getattr(self.state, slot) != canonical:
-                _apply_field_change(self.state, slot, canonical)
+                apply_field_change(self.state, slot, canonical)
             applied[slot] = canonical
             self._advance_past_tool_actions()
 

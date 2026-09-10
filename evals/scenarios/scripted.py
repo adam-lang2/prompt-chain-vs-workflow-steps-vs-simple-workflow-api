@@ -12,12 +12,12 @@ each agent architecture resumes a long conversation from:
   workflow asks it. This is the "easy mode" baseline.
 - MESSY: user answers out of order, bundles several answers into one
   message, corrects an earlier answer mid-conversation, and asks unrelated
-  questions that don't fill any slot. Both agents have to resume from the
+  questions that don't fill any slot. Every agent has to resume from the
   right place despite this.
 
 The workflow has 15 steps (12 questions + 3 tool-action steps), so each
 scenario now touches more slots than a shorter workflow would -- more
-surface area for either architecture to drop or mix up a value.
+surface area for any architecture to drop or mix up a value.
 """
 from __future__ import annotations
 

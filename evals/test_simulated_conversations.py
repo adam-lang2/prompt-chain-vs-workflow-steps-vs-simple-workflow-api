@@ -26,7 +26,7 @@ from deepeval.simulator import ConversationSimulator
 from deepeval.test_case.conversational_test_case import MultiTurnParams
 
 from tennis_booking.agents.base import DEFAULT_MODEL
-from tennis_booking.agents.registry import AGENTS_UNDER_TEST, AgentUnderTest
+from tennis_booking.agents.agent_registry import AGENTS_UNDER_TEST, AgentUnderTest
 from evals.simulated.callback_adapter import make_model_callback
 from evals.simulated.openrouter_model import OpenRouterModel
 from evals.simulated.personas import ALL_GOLDENS

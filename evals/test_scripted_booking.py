@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from tennis_booking.agents.registry import AGENTS_UNDER_TEST, AgentUnderTest
+from tennis_booking.agents.agent_registry import AGENTS_UNDER_TEST, AgentUnderTest
 from tennis_booking.scoring import score_conversation
 from evals.results_tracking import record_result
 from evals.scenarios.runner import run_scripted_scenario
@@ -49,5 +49,17 @@ def test_scripted_booking(agent: AgentUnderTest, scenario: ScriptedScenario):
     assert score.booked, f"[{label}] agent never called book_court"
     assert not score.mismatches, f"[{label}] mismatches: {score.mismatches}"
 
-    if agent.extra_invariant is not None:
-        agent.extra_invariant(conversation_agent)
+    # Generic across all three architectures (unlike the old per-agent
+    # extra_invariant mechanism): every tool the agent was given must have
+    # actually been called at least once -- e.g. this is what verifies the
+    # prompt_chain agent really used get_next_step rather than degenerating
+    # into a plain tool-calling loop that happens to still pass the scoring
+    # above. And no tool result may ever leak a "state" blob back onto the
+    # wire, which is the specific efficiency claim get_next_step makes.
+    called_tool_names = {r.name for r in conversation_agent.tool_call_log}
+    declared_tool_names = {t["name"] for t in conversation_agent.tools}
+    unused = declared_tool_names - called_tool_names
+    assert not unused, f"[{label}] agent never called: {sorted(unused)}"
+
+    leaks = [r for r in conversation_agent.tool_call_log if "state" in r.result]
+    assert not leaks, f"[{label}] a tool result leaked a 'state' payload on {len(leaks)} call(s)"

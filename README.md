@@ -1,35 +1,31 @@
-# prompt-chain-vs-workflow-steps
+# prompt-chain-vs-workflow-steps-vs-simple-workflow-api
 
-Reliability comparison of four ways to implement the same multi-turn agent
+Reliability comparison of three ways to implement the same multi-turn agent
 workflow:
 
+- **Workflow agent** (`src/tennis_booking/agents/workflow_agent.py`) — the
+  workflow is a numbered list of steps baked into one static system prompt,
+  used unchanged for the whole conversation. The model has no state tool
+  and must re-read the whole transcript every turn to figure out which
+  numbered step to resume from.
 - **Prompt-chain agent** (`src/tennis_booking/agents/prompt_chain_agent.py`)
   — the workflow lives server-side. The system prompt only describes it at a
   high level, and the model calls a `get_next_step()` tool every turn to get
-  back a fresh, dynamically generated instruction — a chain of small prompts,
-  one per step, rather than one fixed prompt for the whole conversation.
-  Progress is tracked in a server-side `BookingState`, but `get_next_step()`
-  echoes that *entire* state back to the model on every call.
-- **Prompt-chain v2 agent** (`src/tennis_booking/agents/prompt_chain_agent_v2.py`)
-  — identical architecture, but `get_next_step()`'s wire payload is minimal:
-  no state echo, just the next instruction. State lives in a
-  `ConversationStore` (a stand-in for a real persistent store, e.g. Redis)
-  keyed by a `conversation_id` the model is given once and must pass on
-  every call — the same pattern a real, stateless tool-execution backend
-  would use.
-- **Workflow-step agent** (`src/tennis_booking/agents/workflow_step_agent.py`)
-  — the workflow is a numbered list of steps baked into one static system
-  prompt, used unchanged for the whole conversation. The model has no state
-  tool and must re-read the whole transcript every turn to figure out which
-  numbered step to resume from.
-- **a2a-fsm-api** (`src/tennis_booking/agents/a2a_fsm_api.py`) — a
-  structurally different approach, but running through the same shared
+  back a fresh, dynamically generated instruction — a chain of small
+  prompts, one per step, rather than one fixed prompt for the whole
+  conversation. Progress is tracked in a `ConversationStore` (a stand-in for
+  a real persistent store, e.g. Redis) keyed by a `conversation_id` the
+  model is given once and must pass on every call — the same pattern a
+  real, stateless tool-execution backend would use. `get_next_step()`'s
+  wire payload is minimal: no state echo, just the next instruction.
+- **Simple-workflow-api agent** (`src/tennis_booking/agents/simple_workflow_api_agent.py`)
+  — a structurally different approach, but running through the same shared
   Messages-API tool-use loop (`agents/base.py`) as the others. Agent-1 has
   exactly one tool, `book_tennis_court`, taking a single `updates` array of
   `{slot, value}` deltas -- any combination, in one call: a correction to
   something answered earlier, the current node's answer, one or more
   not-yet-reached nodes the user already answered, or several of these at
-  once. That tool's handler delegates to `FSMAgent` (`fsm_agent/`) — agent-2,
+  once. That tool's handler delegates to `FSMAgent` (`workflow_engine/`) — agent-2,
   not an LLM at all: a deterministic step machine (`LangGraphStepEngine`, a
   `langgraph.graph.StateGraph`) that validates each slot, executes
   `search_availability` / `book_court` itself the instant the workflow
@@ -38,25 +34,10 @@ workflow:
 
 Every agent implements the *identical* workflow, defined once in
 `src/tennis_booking/workflow_steps.py`, and is listed together in
-`src/tennis_booking/agents/registry.py`. Every eval is written once and
+`src/tennis_booking/agents/agent_registry.py`. Every eval is written once and
 parametrized over that registry, so any difference the evals surface comes
 from the architecture, not from the task or from a test drifting between
-copy-pasted versions. See `docs/improvements-plan.md` for the design
-rationale behind the tooling described below (per-call latency metrics, the
-`tools/` package layout, the `fsm_agent` step-engine family, the
-standard scripted suite, and the standard comparison report).
-
-> Earlier revisions of this project also compared three more architectures
-> under the `agent-to-agent-prompt-chain` name (v1/v2/v3) -- a free-text
-> `payload` string parsed by a regex-based step engine
-> (`HandRolledStepEngine`), then the same protocol re-backed by a
-> `transitions.Machine` engine (`TransitionsStepEngine`). Both engines still
-> live in `fsm_agent/` and are still unit-tested directly (see
-> `tests/test_step_engine.py`), but the agent modules that wired them up as
-> standalone architectures have been retired now that `a2a-fsm-api` (backed
-> by `LangGraphStepEngine`) is the project's one structured-tool
-> architecture. The "What repeated live runs have found so far" section
-> below still describes findings from when those architectures existed.
+copy-pasted versions.
 
 ## Goals
 
@@ -104,7 +85,7 @@ agent's prompt:
   up, the old results are stale — search again before letting the user pick
   a time, even if they'd already picked one. `BookingState.search_params_stale()`
   enforces this deterministically wherever server-side state exists
-  (prompt-chain, v2, a2a-fsm-api); `workflow_step_agent.py` relies on
+  (prompt-chain, simple-workflow-api); `workflow_agent.py` relies on
   the same instruction text alone, since it has no state to check against.
 - **Grounding**: never state or book a court name, time, or price that isn't
   literally present in the most recent `search_availability` result.
@@ -121,7 +102,7 @@ src/tennis_booking/
                             distinguishes "never searched" from "searched,
                             zero results" -- shared by every architecture
   mock_courts.py           mock court directory, deterministic availability,
-                            KNOWN_AREAS (used by the regex-agent's extractor)
+                            KNOWN_AREAS
   workflow_steps.py        single source of truth for the 15-step workflow,
                             plus the shared staleness/grounding guidance text
   tools/                    one tool (schema + implementation) per module --
@@ -132,47 +113,33 @@ src/tennis_booking/
                              actually lives in
     search_availability.py    SEARCH_AVAILABILITY_TOOL, run_search_availability
     book_court.py             BOOK_COURT_TOOL, run_book_court
-    get_next_step.py          GET_NEXT_STEP_TOOL, NextStepTool (v1, full-state echo)
-    get_next_step_v2.py       GET_NEXT_STEP_TOOL_V2, NextStepToolV2,
-                               ConversationStore (v2, minimal payload)
-    book_tennis_court_v4.py   BOOK_TENNIS_COURT_TOOL_V4 (a2a-fsm-api) --
+    prompt_chain_get_next_step.py
+                               GET_NEXT_STEP_TOOL, NextStepTool, ConversationStore --
+                               used by the prompt-chain agent
+    book_tennis_court.py      BOOK_TENNIS_COURT_TOOL (simple-workflow-api) --
                                `updates` array of {slot, value} deltas
-  fsm_agent/                  package holding every non-LLM, non-native-tool-calling
-                             "turn text/typed fields into workflow progress"
-                             engine -- one family, grouped together rather
-                             than scattered at the top of tennis_booking/:
-    step_engine_shared.py            shared, non-differentiating machinery behind
-                               all three step-computation engines below -- field
-                               extractors, the "<label>: <value>" grammar
-                               (FIELD_LABELS), FIELD_DEPENDENTS (which
-                               corrections cascade into a re-search vs. just
-                               a reset confirmation), labeled-batch
-                               application, response shaping, and
-                               `step_is_current` (the per-step "is this
-                               still unmet" guard TransitionsStepEngine and
-                               LangGraphStepEngine both use). Composed
-                               (never inherited) by every engine so each can
-                               be read end-to-end on its own.
-    step_engine_handrolled.py              HandRolledStepEngine -- step-computation engine #1: a
-                               hand-rolled priority scan (workflow_steps.next_step_for)
-    step_engine_transitions.py           TransitionsStepEngine -- step-computation engine #2: a
-                               declared transitions.Machine. Does NOT extend
-                               HandRolledStepEngine -- both compose step_engine_shared.py as
-                               independent siblings (see step_engine_shared.py's docstring)
-    step_engine_langgraph.py             LangGraphStepEngine -- step-computation engine #3: a
-                               compiled langgraph.graph.StateGraph (route
-                               node + conditional edges guarded by
-                               step_is_current, tool-action nodes that loop
-                               back to route). FSMAgent's current engine --
-                               composes step_engine_shared.py the same way
-                               as its two siblings, inherits from neither.
-    agent.py                    FSMAgent(LangGraphStepEngine) -- same
-                               StateGraph engine, but book_tennis_court
-                               takes an `updates` array of {slot, value}
-                               deltas instead of a payload string to parse
-    __init__.py                  re-exports FSMAgent, HandRolledStepEngine,
-                               TransitionsStepEngine, LangGraphStepEngine so
-                               `from tennis_booking.fsm_agent import X`
+  workflow_engine/            package holding the non-LLM, non-native-tool-calling
+                             "turn typed fields into workflow progress"
+                             engine that backs simple-workflow-api:
+    step_engine_shared.py            domain logic every step-computation engine
+                               needs: field dependents (which corrections
+                               cascade into a re-search vs. just a reset
+                               confirmation), tool-action execution
+                               (search_availability/book_court as a side
+                               effect of reaching that step), response
+                               shaping, and `step_is_current` (the per-step
+                               "is this still unmet" guard)
+    step_engine_langgraph.py             LangGraphStepEngine -- step-computation engine backed by a
+                               compiled `langgraph.graph.StateGraph` (a
+                               `route` node whose conditional edges are
+                               guarded by step_is_current, with tool-action
+                               nodes that loop back to route)
+    agent.py                    FSMAgent(LangGraphStepEngine) -- adds
+                               `book_tennis_court`'s typed `updates` array of
+                               {slot, value} deltas (with server-side
+                               per-slot validation) on top of that engine
+    __init__.py                  re-exports FSMAgent, LangGraphStepEngine so
+                               `from tennis_booking.workflow_engine import X`
                                works regardless of which file X lives in
   scoring.py                deterministic pass/fail scoring from tool-call args
   cli.py                     `tennis-chat` interactive terminal harness
@@ -182,24 +149,23 @@ src/tennis_booking/
                              OpenRouter), used by every agent. UsageRecord
                              carries input/output tokens AND per-call
                              latency_ms, timed around the API call itself
-    prompt_chain_agent.py     get_next_step() v1 (full state echo)
-    prompt_chain_agent_v2.py  get_next_step() v2 (minimal payload, ConversationStore)
-    workflow_step_agent.py    numbered-steps-in-one-prompt agent
-    a2a_fsm_api.py            agent-1 (book_tennis_court v4, {slot, value}
+    prompt_chain_agent.py     get_next_step() agent -- minimal wire payload,
+                               state kept in a ConversationStore
+    workflow_agent.py         numbered-steps-in-one-prompt agent
+    simple_workflow_api_agent.py    agent-1 (book_tennis_court, {slot, value}
                                deltas) + FSMAgent (LangGraphStepEngine)
-    registry.py               AGENTS_UNDER_TEST -- the single list the CLI
+    agent_registry.py         AGENTS_UNDER_TEST -- the single list the CLI
                                and every eval iterate over
 
 tests/                  fast, deterministic, no credentials needed -- always
                          safe to run, never talks to the real API
-  test_workflow_steps.py     pure unit tests of the step machine + get_next_step v1/v2
-  test_step_engine.py         pure unit tests of HandRolledStepEngine's, TransitionsStepEngine's,
-                               AND LangGraphStepEngine's step machine + every field
-                               extractor (parametrized over all three engines via
-                               the `agent_cls` fixture) -- the most heavily tested
-                               module in the project, since it's the only one
-                               without the model's own native tool-calling doing
-                               slot extraction for it
+  test_workflow_steps.py     pure unit tests of the step machine + get_next_step
+  test_step_engine.py         pure unit tests of FSMAgent's step machine (every
+                               slot validator, correction/staleness/forward-fill
+                               behavior, multi-slot updates) -- the most
+                               heavily tested module in the project, since
+                               it's exercised only through a fake client
+                               elsewhere
   test_agent_wiring.py       tool-loop smoke tests via a fake OpenAI-shaped
                              client, covering every agent
   fakes.py                    minimal fake client used by test_agent_wiring.py
@@ -249,7 +215,7 @@ evals/                  live-API agent reliability evals -- every test here
                                  orderly, messy/self-correcting, terse,
                                  over-explaining, and off-topic-detouring
     callback_adapter.py         bridges ConversationAgent -> deepeval's model_callback
-    oauth_model.py               deepeval judge model that authenticates the
+    openrouter_model.py          deepeval judge model that authenticates the
                                  same way the agents do (see Auth below)
 ```
 
@@ -281,18 +247,17 @@ Before trusting any automated eval, talk to any agent directly in your
 terminal:
 
 ```bash
-uv run tennis-chat --agent prompt_chain              # get_next_step, full state echo
-uv run tennis-chat --agent prompt_chain_v2            # get_next_step, minimal payload
-uv run tennis-chat --agent workflow_step --quiet       # numbered steps, one static prompt
-uv run tennis-chat --agent a2a_fsm_api                # one tool, book_tennis_court, + FSMAgent backend
+uv run tennis-chat --agent prompt_chain              # get_next_step, minimal payload
+uv run tennis-chat --agent workflow --quiet          # numbered steps, one static prompt
+uv run tennis-chat --agent simple_workflow_api       # one tool, book_tennis_court, + FSMAgent backend
 ```
 
 Type messages, watch which tool gets called each turn, and see a full
-call-log summary when you exit (`exit` or Ctrl-D). For `a2a_fsm_api` you'll
-only ever see one tool name (`book_tennis_court`) in the trace —
+call-log summary when you exit (`exit` or Ctrl-D). For `simple_workflow_api`
+you'll only ever see one tool name (`book_tennis_court`) in the trace —
 `search_availability` / `book_court` still show up in the log too, but as
 calls `FSMAgent` made on its own, folded in alongside it for consistency
-with the other three agents.
+with the other two agents.
 
 ## Running the tests
 
@@ -321,7 +286,7 @@ One eval file at a time, or scoped to one agent:
 
 ```bash
 uv run pytest evals/test_scripted_booking.py -v
-uv run pytest evals/test_scripted_booking.py -k a2a_fsm -v
+uv run pytest evals/test_scripted_booking.py -k simple_workflow_api -v
 uv run pytest evals/test_simulated_conversations.py -v -s
 # or via the deepeval CLI for its nicer reporting:
 uv run deepeval test run evals/test_simulated_conversations.py
@@ -358,7 +323,7 @@ standalone `tennis-compare` entry point, which runs the same named
 
 ```bash
 uv run tennis-compare                                   # every registered agent
-uv run tennis-compare --agent workflow_step --agent prompt_chain
+uv run tennis-compare --agent workflow --agent prompt_chain
 uv run tennis-compare --format json --out report.json
 uv run tennis-compare --format markdown --out docs/latest-comparison.md
 ```
@@ -377,11 +342,11 @@ makes real, live model calls.
   its questions. Because the agent picks a `court_id` from live mock
   results, we don't hardcode an expected id — we instead verify the booked
   court's area/surface/indoor-outdoor are consistent with what the user
-  asked for. For `a2a_fsm_api`, these two calls happen *inside* `FSMAgent`
-  rather than as literal tool calls from agent-1 — the adapter
-  (`a2a_fsm_api.py`) folds them into the same `tool_call_log` shape every
-  other agent produces, so this scoring code runs completely unmodified
-  across all four architectures.
+  asked for. For `simple_workflow_api`, these two calls happen *inside*
+  `FSMAgent` rather than as literal tool calls from agent-1 — the adapter
+  (`simple_workflow_api_agent.py`) folds them into the same `tool_call_log` shape
+  every other agent produces, so this scoring code runs completely
+  unmodified across all three architectures.
 - **Simulated eval** (`evals/test_simulated_conversations.py`): a custom
   `ConversationalGEval` (did it ask everything once and only once — without
   re-asking for something the user already volunteered — in a sensible
@@ -392,12 +357,16 @@ makes real, live model calls.
   "unmet user intentions," which is the wrong standard for a narrowly-scoped
   booking assistant.
 - **Fairness**: both evals are a single parametrized test function over
-  `AGENTS_UNDER_TEST` (`agents/registry.py`) — the scenario data, the
-  scoring/criteria, and the assertions are one copy shared by every agent.
-  An architecture-specific extra check (e.g. `a2a_fsm_api` must actually
-  call `book_tennis_court`; `prompt_chain_v2` must never leak a `"state"`
-  payload) is expressed as that agent's `extra_invariant` in the registry,
-  not as a branch inside the eval body.
+  `AGENTS_UNDER_TEST` (`agents/agent_registry.py`) — the scenario data, the
+  scoring/criteria, and the assertions are one copy shared by every agent,
+  with no per-architecture branch inside the eval body. That includes the
+  mechanism check: `test_scripted_booking.py` asserts every tool an agent
+  was given actually got called at least once (so `simple_workflow_api`
+  really used `book_tennis_court`, `prompt_chain` really used
+  `get_next_step`, rather than any agent silently degenerating into a
+  plainer tool-calling loop that happens to still pass scoring) and that no
+  tool result ever leaks a `"state"` payload — one generic check applied
+  identically to all three, not a per-agent invariant.
 - **Token/latency/cost accounting** (`evals/token_tracking.py`): every agent
   records a `UsageRecord` per model call — input/output tokens straight from
   the same `response.usage` the Chat Completions API returns, plus
@@ -424,17 +393,18 @@ settled.
 > have not been re-measured under DeepSeek -- treat this whole section as a
 > pre-migration snapshot until it's refreshed.
 
-**Reliability (prompt_chain / prompt_chain_v2 / workflow_step, n≈3-6 per
-cell, Haiku-tier agents and judge, measured pre-migration under Claude):**
+**Reliability (workflow / prompt-chain, n≈3-6 per cell, Haiku-tier agents
+and judge, measured pre-migration under Claude):**
 
-- The scripted eval is a clean sweep across these three (18/18 across 3 reps
-  x 3 scenarios) — fixed, well-formed, one-topic-per-turn input doesn't
-  differentiate them. Reliability gaps only showed up under the simulated
-  eval's LLM-improvised, multi-topic, self-correcting pressure —
-  conversational *messiness*, not length, is what a useful regression check
-  here needs to stress.
+- The scripted eval is a clean sweep across these architectures (18/18
+  across 3 reps x 3 scenarios on the original 3-scenario suite) — fixed,
+  well-formed, one-topic-per-turn input doesn't differentiate them.
+  Reliability gaps only showed up under the simulated eval's
+  LLM-improvised, multi-topic, self-correcting pressure — conversational
+  *messiness*, not length, is what a useful regression check here needs to
+  stress.
 - The two failure modes seen there were architecture-relevant, not
-  identical: the workflow-step agent once hallucinated and booked a time
+  identical: the workflow agent once hallucinated and booked a time
   slot never present in a real `search_availability` result (this motivated
   the grounding guidance above); the prompt-chain agent once skipped
   reciting the booking summary and called `book_court` directly under a busy
@@ -448,27 +418,27 @@ cell, Haiku-tier agents and judge, measured pre-migration under Claude):**
   fixed the whole failure category. Treat eval-criteria text with the same
   scrutiny as the agents' own system prompts.
 
-**Token cost (v1 vs. v2, measured on the identical scripted scenario):**
+**Token cost (prompt-chain's minimal payload vs. its full-state-echo
+predecessor, measured on the identical scripted scenario, pre-migration):**
 
-- v2's minimal `get_next_step()` payload measurably worked: **~13% lower**
-  total input tokens and **~16% lower** average tokens/call than v1, on an
-  otherwise-identical conversation (same message count, same API call
-  count). Eliminating the `"state": {...}` echo removed real weight.
-- It did *not* close the gap with `workflow_step_agent`, and the reason is
-  structural, not a v2 shortcoming: `prompt_chain`/`v2` both make roughly
-  2× the API calls per conversation (an extra `get_next_step` round-trip
-  almost every turn), and since the Messages API is stateless, every one of
-  those extra round-trips' `tool_use`/`tool_result` messages gets resent in
-  full on every later call in that conversation. That compounding was
-  always the dominant cost driver — bigger than any single payload's size —
-  and neither v1 nor v2 touches it, since both still call the tool once a
-  turn either way. `workflow_step_agent` trades a bigger static prompt for
-  far fewer round-trips and comes out cheaper in total, even though its
-  first-call fixed overhead is the larger of the two (measured directly via
-  `count_tokens`: `workflow_step` 2,345 tokens vs. `prompt_chain` 1,806
-  tokens on a from-scratch first call).
+- Trimming `get_next_step()`'s wire payload down to just the next
+  instruction (no state echo) measurably worked: **~13% lower** total input
+  tokens and **~16% lower** average tokens/call than the full-echo version,
+  on an otherwise-identical conversation (same message count, same API call
+  count).
+- It did *not* close the gap with `workflow_agent`, and the reason is
+  structural: `prompt_chain` makes roughly 2× the API calls per
+  conversation (an extra `get_next_step` round-trip almost every turn), and
+  since the Messages API is stateless, every one of those extra
+  round-trips' `tool_use`/`tool_result` messages gets resent in full on
+  every later call in that conversation. That compounding is the dominant
+  cost driver — bigger than any single payload's size. `workflow_agent`
+  trades a bigger static prompt for far fewer round-trips and comes out
+  cheaper in total, even though its first-call fixed overhead is the larger
+  of the two (measured directly via `count_tokens`: `workflow_agent` 2,345
+  tokens vs. `prompt_chain` 1,806 tokens on a from-scratch first call).
 
-**Agent-to-agent-prompt-chain — architecture-specific findings:**
+**Simple-workflow-api — architecture-specific findings:**
 
 - **This architecture originally ran agent-1 as a real Claude Code subprocess
   via the Claude Agent SDK (`claude_agent_sdk`)**, since the "agent-to-agent"
@@ -482,7 +452,7 @@ cell, Haiku-tier agents and judge, measured pre-migration under Claude):**
   project already runs through, so it was rewritten onto the same shared
   `ConversationAgent` loop (`agents/base.py`) instead. This removed the fixed
   overhead entirely (measured live: avg ~3,700 input tokens/call, in line
-  with the other three architectures) and made cost directly comparable on
+  with the other architectures) and made cost directly comparable on
   raw token counts, with no more SDK-side caching caveat.
 - **A single design bug caused a total failure the first time this was
   tested live**, and is worth naming precisely because it's the kind of
@@ -495,75 +465,58 @@ cell, Haiku-tier agents and judge, measured pre-migration under Claude):**
   the user's first message as the bootstrap payload whenever it contains
   anything answerable, falling back to an empty payload only for a truly
   content-free opener like a bare "hi."
-- **Pure-regex extraction needs a bit of real engineering to be usable, not
-  just "write a regex."** The first live test also revealed the naive
-  area/name extractors accepting an entire relayed sentence verbatim (e.g.
-  `area = "Hi, I'd like to book a tennis court somewhere near downtown."`)
-  instead of pulling out just the relevant word. Fixed with two standard
-  regex-NLU techniques: gazetteer matching against `mock_courts.KNOWN_AREAS`
-  for area, and common lead-in-phrase stripping ("my name is", "it's", "I'm
-  ...") for the name. Both are reasonable, expected parts of a competent
-  regex extractor — not scope creep into "give the regex-agent semantic
-  understanding."
 - **The one-field-per-call design (agent-2 "keeps track of the current
   workflow step") originally had a real, structural failure mode on scripted
-  messy scenarios — since fixed, in two directions.** When a user bundles
-  multiple answers into one message (e.g. "eastside... 2 players"),
-  `HandRolledStepEngine.handle()` only ever extracts the field for whichever step is
-  *currently* active. Two distinct gaps followed from that:
+  messy scenarios in an early free-text-payload version of this
+  architecture -- since fixed, in two directions, and superseded by the
+  current typed `updates` array (which has no free-text extraction step to
+  fail this way in the first place).** When a user bundled multiple answers
+  into one message (e.g. "eastside... 2 players"), the free-text handler
+  only ever extracted the field for whichever step was *currently* active.
+  Two distinct gaps followed from that:
   - **Forward** — an answer for a step several turns *ahead* got silently
     dropped, and (on a fixed script that never repeats itself, unlike an
     adaptive user) the conversation could get stuck re-asking the same
-    question forever. Fixed in the system prompt, not the extractor: agent-1
-    now tracks every detail the user has given across the *whole*
-    conversation (not just their latest message) and proactively resubmits
-    it once the relevant step comes up, instead of waiting to be asked.
+    question forever. Fixed in the system prompt: agent-1 tracks every
+    detail the user has given across the *whole* conversation (not just
+    their latest message) and proactively resubmits it once the relevant
+    step comes up, instead of waiting to be asked -- still true of the
+    current `updates`-array design, which is exactly what forward-filling a
+    not-yet-reached slot is for.
   - **Backward** — a correction to a field from a step already *passed*
     (e.g. "wait, let's do 2026-09-12 instead" arriving while duration is
-    being asked) was invisible to the active step's extractor and silently
-    dropped, shipping the stale original value to `search_availability` /
-    `book_court`. Fixed with an explicit, extensible dependency model,
-    `FIELD_DEPENDENTS` in `step_engine_handrolled.py`: a correction cue word ("actually",
-    "wait", "instead", ...) triggers a scan of earlier, already-answered
-    fields; applying a match reuses `BookingState.search_params_stale()`'s
-    existing cascade for the six search-input fields (no new invalidation
-    code needed — a re-search + cleared selection falls out of the normal
-    step machine automatically) and resets `summary_confirmed` for every
-    other field, with no other re-asking. Live-verified end to end: a date
-    correction now visibly shows up in the eventual `search_availability`
-    call, and agent-1 confirms it from the tool's own `"corrected"` field
-    rather than assuming it worked.
-  - Building and verifying the correction path surfaced four more real bugs
-    along the way, all fixed: (1) the first version of correction-scanning
-    used each field's normal (permissive) extractor, so `_extract_area`'s
-    catch-all fallback intercepted an unrelated date correction and
-    misattributed it to `area` — fixed by giving every extractor an explicit
-    `strict` mode used only during correction-scanning, with no
-    accept-anything fallback. (2) That bug's corrupted `area` value
-    legitimately matched zero courts, which exposed a **separate,
-    pre-existing latent bug** shared by every architecture:
-    `BookingState.availability_searched()` used `bool(available_courts)` as
-    a proxy for "has search run," so a genuine zero-result search looked
-    identical to "never searched" and `next_step_for` re-issued the same
-    search forever — fixed at the shared model level with an explicit
-    `search_has_run` flag (benefits all four agents, not just this one).
-    (3) `_extract_indoor_outdoor` didn't treat "doesn't matter" (or both
-    "indoor" and "outdoor" mentioned together) as "either," matching the
-    literal word "indoor" first — fixed with an explicit either-synonym
-    list, mirroring the pattern the surface extractor already used for
-    "any." (4) `_extract_time` matched a chosen court only by literal name;
-    a user describing it by surface instead ("the grass court") fell through
-    to "any court with this time slot" and silently booked the wrong one
-    whenever two courts shared a slot — fixed by also matching on the
-    court's surface. All three scripted scenarios (including both messy
-    ones) now pass live end to end after these fixes.
+    being asked) was invisible to the active step's free-text extractor and
+    silently dropped, shipping the stale original value to
+    `search_availability` / `book_court`. Fixed with an explicit,
+    extensible dependency model, `FIELD_DEPENDENTS`
+    (`workflow_engine/step_engine_shared.py`): correcting a slot reuses
+    `BookingState.search_params_stale()`'s existing cascade for the six
+    search-input fields (no new invalidation code needed -- a re-search and
+    cleared selection fall out of the normal step machine automatically)
+    and resets `summary_confirmed` for every other field, with no other
+    re-asking. The current typed schema makes this simpler still: a
+    correction is just any slot named in `updates[]`, current or not --
+    there's no "which step is this free text answering" ambiguity left to
+    get wrong.
+  - Building and verifying the correction path surfaced two more real bugs
+    along the way, both fixed at the shared model level so every
+    architecture benefits: (1) `BookingState.availability_searched()` used
+    `bool(available_courts)` as a proxy for "has search run," so a genuine
+    zero-result search looked identical to "never searched" and the step
+    machine re-issued the same search forever -- fixed with an explicit
+    `search_has_run` flag. (2) selecting a time by court surface alone
+    (e.g. "the grass court") instead of the court's actual name used to
+    fall through to "any court with this open time," silently picking the
+    wrong one whenever two courts shared a slot -- fixed by also matching
+    on surface (`court_hint` in the current schema; see
+    `FSMAgent._resolve_selected_time`).
 
 ## Extending
 
 - **Add a workflow step**: edit `STEPS` in `workflow_steps.py` once — every
   agent's prompt/tool logic regenerates from it.
 - **Add another agent architecture to compare**: add an `AgentUnderTest`
-  entry to `agents/registry.py`; every eval and the CLI pick it up
+  entry to `agents/agent_registry.py`; every eval and the CLI pick it up
   automatically. Every agent in this project shares
   `agents.base.ConversationAgent`'s raw Messages API loop — a new
   architecture is expected to as well (system prompt + tool set + tool

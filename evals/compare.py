@@ -1,17 +1,17 @@
 """`tennis-compare` -- standalone entry point that runs the standard
 scripted comparison suite (`evals.suite.STANDARD_SUITE`) against one,
 several, or (by default) every registered agent architecture
-(`agents.registry.AGENTS_UNDER_TEST`), outside of pytest, and prints the
+(`agents.agent_registry.AGENTS_UNDER_TEST`), outside of pytest, and prints the
 standard comparison report (`evals/report.py`).
 
 pytest's existing parametrization (`test_scripted_booking.py`) already
 covers the automated-test use case; this script is what you actually reach
-for to run "just workflow_step vs. a2a_fsm_api" interactively, without
+for to run "just workflow vs. simple_workflow_api" interactively, without
 pytest's node-id `-k`/`::` syntax, and to get the report in JSON or
 Markdown instead of pytest's terminal output.
 
     uv run tennis-compare
-    uv run tennis-compare --agent workflow_step --agent prompt_chain
+    uv run tennis-compare --agent workflow --agent prompt_chain
     uv run tennis-compare --format json --out report.json
     uv run tennis-compare --format markdown --out docs/latest-comparison.md
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from evals.report import build_report
 from evals.results_tracking import record_result
@@ -29,7 +30,7 @@ from evals.scenarios.runner import run_scripted_scenario
 from evals.suite import STANDARD_SUITE
 from evals.token_tracking import record_usage
 from tennis_booking.agents.base import has_usable_credentials
-from tennis_booking.agents.registry import AGENTS_BY_ID, AGENTS_UNDER_TEST
+from tennis_booking.agents.agent_registry import AGENTS_BY_ID, AGENTS_UNDER_TEST
 from tennis_booking.scoring import score_conversation
 
 
@@ -41,7 +42,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         dest="agent_ids",
         metavar="AGENT_ID",
         help=(
-            "Agent id to include (repeatable), e.g. --agent workflow_step. "
+            "Agent id to include (repeatable), e.g. --agent workflow. "
             "Defaults to every entry in AGENTS_UNDER_TEST. "
             f"Valid ids: {', '.join(a.id for a in AGENTS_UNDER_TEST)}."
         ),
@@ -81,9 +82,12 @@ def main(argv: list[str] | None = None) -> int:
     for agent_id in agent_ids:
         agent = AGENTS_BY_ID[agent_id]
         print(f"Running {agent.id} against {len(STANDARD_SUITE)} scenarios...", file=sys.stderr)
-        for scenario in STANDARD_SUITE:
+        for i, scenario in enumerate(STANDARD_SUITE):
+            scenario_start = time.perf_counter()
+            print(f"  [{i + 1}/{len(STANDARD_SUITE)}] {scenario.name} ...", file=sys.stderr, flush=True)
             conversation_agent = agent.create()
             run_scripted_scenario(conversation_agent, scenario)
+            print(f"  [{i + 1}/{len(STANDARD_SUITE)}] {scenario.name} done in {time.perf_counter() - scenario_start:.1f}s", file=sys.stderr, flush=True)
             record_usage(agent.id, conversation_agent)
             score = score_conversation(
                 tool_call_log=conversation_agent.tool_call_log,

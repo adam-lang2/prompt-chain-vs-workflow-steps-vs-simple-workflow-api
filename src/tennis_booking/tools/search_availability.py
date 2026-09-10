@@ -37,7 +37,18 @@ SEARCH_AVAILABILITY_TOOL: dict[str, Any] = {
 
 
 def run_search_availability(args: dict) -> tuple[dict, list[CourtAvailability]]:
-    """Execute search_availability. Returns (tool_result_for_model, raw_courts)."""
+    """Execute search_availability. Returns (tool_result_for_model, raw_courts).
+
+    `area`/`date` are marked required in the tool schema, but a JSON Schema
+    `required` list is only a hint to the model, not an enforced contract --
+    a live call can still omit one. Report that back as a tool result the
+    model can recover from, instead of an unhandled KeyError that kills the
+    whole conversation.
+    """
+    missing = [f for f in ("area", "date") if not args.get(f)]
+    if missing:
+        return {"error": f"Missing required field(s): {', '.join(missing)}. Ask the user and try again."}, []
+
     courts = _search_availability(
         area=args["area"],
         date=args["date"],

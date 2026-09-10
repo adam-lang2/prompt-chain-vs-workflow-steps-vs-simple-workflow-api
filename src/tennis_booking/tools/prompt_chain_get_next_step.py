@@ -1,22 +1,23 @@
-"""`get_next_step` v2 -- used by `agents/prompt_chain_agent_v2.py`. Assumes
-get_next_step is backed by a real persistent store (`ConversationStore`
-below -- a stand-in for e.g. Redis or a DB table in production) keyed by a
-`conversation_id` that's fixed for the life of the conversation and given
-to the model once, in the system prompt. The tool call then carries only
-conversation_id plus whatever fields the user just gave; the tool result
-carries only the next instruction. No state ever round-trips through the
-model's context -- contrast `get_next_step.py` (v1), which echoes the
-entire BookingState back on every call.
+"""`get_next_step` -- used by `agents/prompt_chain_agent.py`. Backed by a
+real persistent store (`ConversationStore` below -- a stand-in for e.g.
+Redis or a DB table in production) keyed by a `conversation_id` that's fixed
+for the life of the conversation and given to the model once, in the system
+prompt. The tool call then carries only conversation_id plus whatever fields
+the user just gave; the tool result carries only the next instruction. No
+state ever round-trips through the model's context -- a growing "state"
+payload echoed back on every call would otherwise get baked into message
+history and re-billed on every subsequent API call for the rest of the
+conversation.
 """
 from __future__ import annotations
 
 import uuid
 from typing import Any
 
-from tennis_booking.models import BookingState
+from tennis_booking.workflow_engine.state import BookingState
 from tennis_booking.workflow_steps import next_step_for
 
-GET_NEXT_STEP_TOOL_V2: dict[str, Any] = {
+GET_NEXT_STEP_TOOL: dict[str, Any] = {
     "name": "get_next_step",
     "description": (
         "Report any new tennis-booking details the user just gave you (only "
@@ -66,9 +67,9 @@ GET_NEXT_STEP_TOOL_V2: dict[str, Any] = {
 class ConversationStore:
     """Stand-in for a persistent backing store (Redis, a DB table, etc. in a
     real deployment) keyed by conversation_id. This is what lets
-    NextStepToolV2's wire payload stay tiny: the durable BookingState lives
+    `NextStepTool`'s wire payload stay tiny: the durable BookingState lives
     here, server-side, looked up by id -- it is never serialized into the
-    model's context the way NextStepTool (v1) does on every call.
+    model's context.
     """
 
     def __init__(self):
@@ -86,12 +87,11 @@ class ConversationStore:
         except KeyError:
             raise KeyError(f"Unknown conversation_id: {conversation_id!r}")
 
-
-class NextStepToolV2:
-    """get_next_step() v2: identical server-side progress tracking to
-    NextStepTool, but the wire payload never carries the booking state. The
-    model passes only its conversation_id plus whatever fields it just
-    learned; the tool responds with only the next instruction -- no
+class NextStepTool:
+    """get_next_step()'s implementation: server-side progress tracking via
+    `ConversationStore`, with a wire payload that never carries the booking
+    state. The model passes only its conversation_id plus whatever fields it
+    just learned; the tool responds with only the next instruction -- no
     "state": {...} blob, so nothing here grows as the booking fills in.
     """
 

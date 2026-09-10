@@ -1,8 +1,8 @@
-"""Interactive terminal chat with either agent, for manually eyeballing
-behavior before trusting the automated evals.
+"""Interactive terminal chat with any registered agent, for manually
+eyeballing behavior before trusting the automated evals.
 
     uv run tennis-chat --agent prompt_chain
-    uv run tennis-chat --agent workflow_step --quiet
+    uv run tennis-chat --agent workflow --quiet
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import json
 import sys
 
 from tennis_booking.agents.base import ConversationAgent, has_usable_credentials
-from tennis_booking.agents.registry import AGENTS_BY_ID
+from tennis_booking.agents.agent_registry import AGENTS_BY_ID
 
 
 def main() -> None:

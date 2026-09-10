@@ -4,8 +4,9 @@ the scripted scenarios' expected order was designed against.
 """
 from __future__ import annotations
 
-from tennis_booking.models import BookingState, CourtAvailability, TimeSlot
-from tennis_booking.tools import ConversationStore, NextStepTool, NextStepToolV2
+from tennis_booking.models import CourtAvailability, TimeSlot
+from tennis_booking.tools import ConversationStore, NextStepTool
+from tennis_booking.workflow_engine.state import BookingState
 from tennis_booking.workflow_steps import STEPS, next_step_for
 
 
@@ -179,34 +180,20 @@ def test_workflow_complete_returns_none():
     assert next_step_for(state).key == "close_out"
 
 
-def test_next_step_tool_merges_updates_across_calls():
-    state = BookingState()
-    tool = NextStepTool(state)
-
-    result = tool.run({"area": "downtown"})
-    assert result["next_step"] == "ask_date"
-    assert state.area == "downtown"
-
-    result = tool.run({"date": "2026-09-05", "surface": "clay"})
-    assert result["next_step"] == "ask_duration"
-    assert state.date == "2026-09-05"
-    assert state.surface == "clay"
-
-
 def test_all_step_keys_unique():
     keys = [s.key for s in STEPS]
     assert len(keys) == len(set(keys))
 
 
-def test_next_step_tool_v2_merges_updates_via_conversation_id():
+def test_next_step_tool_merges_updates_via_conversation_id():
     store = ConversationStore()
     conversation_id, state = store.create()
-    tool = NextStepToolV2(store)
+    tool = NextStepTool(store)
 
     result = tool.run({"conversation_id": conversation_id, "area": "downtown"})
     assert result["next_step"] == "ask_date"
     assert state.area == "downtown"
-    assert "state" not in result  # the whole point of v2: no state echoed back
+    assert "state" not in result  # the whole point of this design: no state echoed back
 
     result = tool.run({"conversation_id": conversation_id, "date": "2026-09-05", "surface": "clay"})
     assert result["next_step"] == "ask_duration"
@@ -215,18 +202,18 @@ def test_next_step_tool_v2_merges_updates_via_conversation_id():
     assert "state" not in result
 
 
-def test_next_step_tool_v2_requires_conversation_id():
+def test_next_step_tool_requires_conversation_id():
     store = ConversationStore()
     store.create()
-    tool = NextStepToolV2(store)
+    tool = NextStepTool(store)
 
     result = tool.run({"area": "downtown"})
     assert result == {"error": "conversation_id is required on every get_next_step call"}
 
 
-def test_next_step_tool_v2_rejects_unknown_conversation_id():
+def test_next_step_tool_rejects_unknown_conversation_id():
     store = ConversationStore()
-    tool = NextStepToolV2(store)
+    tool = NextStepTool(store)
 
     result = tool.run({"conversation_id": "does-not-exist"})
     assert "error" in result
@@ -240,7 +227,7 @@ def test_conversation_store_keeps_conversations_isolated():
     assert id_a != id_b
     assert state_a is not state_b
 
-    tool = NextStepToolV2(store)
+    tool = NextStepTool(store)
     tool.run({"conversation_id": id_a, "area": "downtown"})
     tool.run({"conversation_id": id_b, "area": "eastside"})
 

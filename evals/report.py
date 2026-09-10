@@ -18,7 +18,7 @@ import json
 from dataclasses import dataclass, field
 
 from evals import results_tracking, stats, token_tracking
-from tennis_booking.agents.registry import AGENTS_BY_ID
+from tennis_booking.agents.agent_registry import AGENTS_BY_ID
 
 
 @dataclass
