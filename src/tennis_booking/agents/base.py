@@ -43,7 +43,20 @@ MAX_TOOL_ITERATIONS_PER_TURN = 8
 # No timeout previously meant a stalled OpenRouter connection could hang
 # this loop indefinitely with no error and no log line -- set an explicit
 # ceiling so a hang surfaces as a TimeoutError within a bounded time instead.
-REQUEST_TIMEOUT_SECONDS = 120
+# 20s is short enough to catch a real hang quickly, but individual calls
+# occasionally take 15-55s under normal (non-hung) load -- REQUEST_MAX_RETRIES
+# is the fallback for that: the openai SDK retries a timed-out request on its
+# own, with backoff, before finally raising, so a single slow-but-alive call
+# doesn't fail outright just for exceeding one 20s attempt.
+REQUEST_TIMEOUT_SECONDS = 20
+REQUEST_MAX_RETRIES = 3
+
+# OpenRouter fronts a pool of providers per model; by default it load-balances
+# across them weighted toward cheaper ones. sort="latency" instead routes to
+# whichever provider currently responds fastest (added to chase down latency
+# spikes traced to specific providers in that pool), with max_price as a
+# guardrail so the latency hunt can't land on an unexpectedly expensive one.
+PROVIDER_ROUTING = {"sort": "latency", "max_price": {"prompt": 0.20}}
 
 # Set TENNIS_BOOKING_DEBUG_TIMING=1 to log every model call and tool
 # execution's wall-clock time to stderr -- added to debug a run that took
@@ -138,6 +151,7 @@ class ConversationAgent:
                 model=self.model,
                 messages=request_messages,
                 tools=openai_tools,
+                extra_body={"provider": PROVIDER_ROUTING},
             )
             latency_ms = (time.perf_counter() - call_start) * 1000
             _debug(f"turn {self._turn} iter {iteration}: chat.completions.create finished in {latency_ms:.0f}ms")
@@ -225,6 +239,7 @@ def new_client() -> openai.OpenAI:
         base_url=OPENROUTER_BASE_URL,
         api_key=os.environ.get("OPENROUTER_API_KEY"),
         timeout=REQUEST_TIMEOUT_SECONDS,
+        max_retries=REQUEST_MAX_RETRIES,
     )
 
 

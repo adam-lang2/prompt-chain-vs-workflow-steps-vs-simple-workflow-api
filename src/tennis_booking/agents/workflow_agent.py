@@ -11,8 +11,10 @@ from tennis_booking.agents.base import ConversationAgent
 from tennis_booking.tools import (
     BOOK_COURT_TOOL,
     SEARCH_AVAILABILITY_TOOL,
+    SEND_CONFIRMATION_TOOL,
     run_book_court,
     run_search_availability,
+    run_send_confirmation,
 )
 from tennis_booking.workflow_steps import GROUNDING_GUIDANCE, STALE_SEARCH_GUIDANCE, render_numbered_steps
 
@@ -56,10 +58,11 @@ def create_agent(client=None) -> ConversationAgent:
 
     return ConversationAgent(
         system_prompt=build_system_prompt(),
-        tools=[SEARCH_AVAILABILITY_TOOL, BOOK_COURT_TOOL],
+        tools=[SEARCH_AVAILABILITY_TOOL, BOOK_COURT_TOOL, SEND_CONFIRMATION_TOOL],
         tool_executors={
             "search_availability": _search,
             "book_court": run_book_court,
+            "send_confirmation": run_send_confirmation,
         },
         client=client,
     )

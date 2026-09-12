@@ -61,7 +61,7 @@ class Step:
     # STEPS can't silently change which slots are search inputs.
     is_search_input: bool = False
 
-
+# TODO - i can't see mention of the tools here!? The steps should tell the model which tool to call
 STEPS: list[Step] = [
     Step(
         key="ask_area",
@@ -235,12 +235,25 @@ STEPS: list[Step] = [
         is_tool_action=True,
     ),
     Step(
+        key="send_confirmation",
+        slot_names=(),
+        instruction=(
+            "The booking was just confirmed. Call the send_confirmation "
+            "tool now, using the contact_email, confirmation_id, court "
+            "name, area, date, and time already established — do not "
+            "re-derive, re-ask, or guess any value. Do not ask the user "
+            "anything else before calling the tool."
+        ),
+        is_tool_action=True,
+    ),
+    Step(
         key="close_out",
         slot_names=(),
         instruction=(
             "Give the user their booking confirmation number exactly as "
-            "returned by book_court — do not alter it. Briefly restate the "
-            "date and time. Ask if there's anything else they need."
+            "returned by book_court — do not alter it. Briefly mention that "
+            "a confirmation email was sent to their address. Briefly restate "
+            "the date and time. Ask if there's anything else they need."
         ),
     ),
 ]
@@ -294,8 +307,15 @@ def next_step_for(state: BookingState) -> Step | None:
                 return step
             continue
 
+        if step.key == "send_confirmation":
+            if not state.booking_confirmed:
+                continue
+            if not state.email_sent:
+                return step
+            continue
+
         if step.key == "close_out":
-            if state.booking_confirmed:
+            if state.email_sent:
                 return step
             continue
 

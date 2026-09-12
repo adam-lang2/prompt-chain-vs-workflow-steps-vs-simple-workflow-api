@@ -5,17 +5,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from tennis_booking.mock_courts import search_availability as _search_availability
 from tennis_booking.models import CourtAvailability
+from tennis_booking.tools.live_courts import LiveCourtLookupError, find_nearby_courts
 
 SEARCH_AVAILABILITY_TOOL: dict[str, Any] = {
     "name": "search_availability",
     "description": (
         "Look up nearby tennis court availability for a given area, date, "
         "surface preference, and indoor/outdoor preference. Returns courts "
-        "with their open time slots and prices. Call this only after you "
-        "have area, date, surface, duration, player count, and "
-        "indoor/outdoor preference from the user."
+        "with their open time slots and prices, sorted nearest to farthest "
+        "(distance_km ascending) -- if the user just says a time without "
+        "naming or otherwise distinguishing a specific court, and more than "
+        "one returned court has that time open, prefer the first (closest) "
+        "one rather than asking the user to disambiguate, unless the user's "
+        "own wording makes clear they mean a particular court. Call this "
+        "tool only after you have area, date, surface, duration, player "
+        "count, and indoor/outdoor preference from the user."
     ),
     "input_schema": {
         "type": "object",
@@ -49,12 +54,19 @@ def run_search_availability(args: dict) -> tuple[dict, list[CourtAvailability]]:
     if missing:
         return {"error": f"Missing required field(s): {', '.join(missing)}. Ask the user and try again."}, []
 
-    courts = _search_availability(
-        area=args["area"],
-        date=args["date"],
-        surface=args.get("surface", "any"),
-        indoor_outdoor=args.get("indoor_outdoor", "either"),
-    )
+    try:
+        courts = find_nearby_courts(
+            area=args["area"],
+            date=args["date"],
+            surface=args.get("surface", "any"),
+            indoor_outdoor=args.get("indoor_outdoor", "either"),
+        )
+    except LiveCourtLookupError as e:
+        # Recoverable per agents/base.py's design: a bad area or a transient
+        # network/service failure becomes a tool-result error the model can
+        # relay and recover from, not an exception that kills the turn.
+        return {"error": str(e)}, []
+
     result = {
         "courts": [
             {
@@ -63,6 +75,9 @@ def run_search_availability(args: dict) -> tuple[dict, list[CourtAvailability]]:
                 "area": c.area,
                 "surface": c.surface,
                 "indoor_outdoor": c.indoor_outdoor,
+                "address": c.address,
+                "rating": c.rating,
+                "distance_km": c.distance_km,
                 "open_times": [{"time": s.time, "price_usd": s.price_usd} for s in c.slots],
             }
             for c in courts

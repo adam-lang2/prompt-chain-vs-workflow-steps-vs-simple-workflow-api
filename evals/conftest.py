@@ -10,6 +10,8 @@ from __future__ import annotations
 import pytest
 
 from tennis_booking.agents.base import has_usable_credentials
+from tennis_booking.tools import live_courts
+from evals.fixtures import live_courts_cassette
 
 NO_CREDENTIALS_REASON = (
     "No OPENROUTER_API_KEY found. Get a key from https://openrouter.ai/keys "
@@ -24,6 +26,19 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "eval" in item.keywords:
             item.add_marker(skip_marker)
+
+
+@pytest.fixture(autouse=True)
+def _recorded_court_lookups(monkeypatch):
+    """Every eval still exercises the real `find_nearby_courts` parsing/
+    filtering/normalization logic in `tools/live_courts.py` -- only the two
+    actual network calls it makes (`_geocode`, `_query_overpass`) are
+    replaced with recorded real responses (see `fixtures/live_courts_cassette.py`),
+    so a scripted scenario's expected court/surface/time data stays stable
+    run to run instead of depending on live OSM/Nominatim state.
+    """
+    monkeypatch.setattr(live_courts, "_geocode", live_courts_cassette.geocode)
+    monkeypatch.setattr(live_courts, "_query_overpass", live_courts_cassette.query_overpass)
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):

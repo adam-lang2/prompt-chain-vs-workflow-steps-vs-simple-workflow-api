@@ -22,10 +22,12 @@ from tennis_booking.tools import (
     BOOK_COURT_TOOL,
     GET_NEXT_STEP_TOOL,
     SEARCH_AVAILABILITY_TOOL,
+    SEND_CONFIRMATION_TOOL,
     ConversationStore,
     NextStepTool,
     run_book_court,
     run_search_availability,
+    run_send_confirmation,
 )
 from tennis_booking.workflow_steps import GROUNDING_GUIDANCE, STALE_SEARCH_GUIDANCE
 
@@ -51,10 +53,11 @@ and any new booking details the user just gave you in their latest message \
 (pass only what's new or changed -- everything else is already remembered \
 for you server-side).
 - get_next_step tells you exactly what to do next: either a question to ask \
-the user, or a tool to call (search_availability or book_court).
-- Follow its instruction exactly. If it tells you to call search_availability \
-or book_court, call that tool, then call get_next_step again (with your \
-conversation_id) before replying to the user.
+the user, or a tool to call (search_availability, book_court, or \
+send_confirmation).
+- Follow its instruction exactly. If it tells you to call search_availability, \
+book_court, or send_confirmation, call that tool, then call get_next_step \
+again (with your conversation_id) before replying to the user.
 - Ask about ONE thing at a time. Keep questions short and conversational.
 
 {stale_search_guidance}
@@ -81,6 +84,11 @@ def create_agent(client=None) -> ConversationAgent:
         state.confirmation_id = result["confirmation_id"]
         return result
 
+    def _send_confirmation(args: dict) -> dict:
+        result = run_send_confirmation(args)
+        state.email_sent = True
+        return result
+
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         conversation_id=conversation_id,
         stale_search_guidance=STALE_SEARCH_GUIDANCE,
@@ -89,11 +97,12 @@ def create_agent(client=None) -> ConversationAgent:
 
     agent = ConversationAgent(
         system_prompt=system_prompt,
-        tools=[GET_NEXT_STEP_TOOL, SEARCH_AVAILABILITY_TOOL, BOOK_COURT_TOOL],
+        tools=[GET_NEXT_STEP_TOOL, SEARCH_AVAILABILITY_TOOL, BOOK_COURT_TOOL, SEND_CONFIRMATION_TOOL],
         tool_executors={
             "get_next_step": next_step_tool.run,
             "search_availability": _search,
             "book_court": _book,
+            "send_confirmation": _send_confirmation,
         },
         client=client,
     )

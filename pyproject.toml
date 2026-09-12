@@ -8,6 +8,8 @@ dependencies = [
     "openai>=1.50.0",
     "pydantic>=2.7",
     "python-dotenv>=1.0",
+    "httpx>=0.27",
+    "geopy>=2.4",
 ]
 
 [project.scripts]

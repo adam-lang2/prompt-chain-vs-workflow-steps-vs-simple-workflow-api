@@ -1,9 +1,18 @@
 """Scripted user turns for the deterministic pytest suite.
 
 Each scenario is a fixed list of user messages (no LLM plays the user) plus
-the expected final booking. Availability for the (court, date) pairs used
-below was precomputed against `mock_courts.search_availability` so the
-chosen times are guaranteed to be open -- see the comment on each scenario.
+the expected final booking. Areas are real, geocodable places
+(`evals/fixtures/live_courts_cassette.py` records their real Nominatim/
+Overpass responses, replayed by `evals/conftest.py` so every run sees the
+same court data); court/time data below was computed by running the actual
+`tools/live_courts.find_nearby_courts` against those recorded fixtures for
+each scenario's exact (area, date, surface, indoor_outdoor) -- see the
+comment on each scenario for which recorded venue it uses.
+
+Real OSM data has two gaps versus the old synthetic mock directory: it has
+no `grass`-tagged courts and no `amenity=sports_centre` (indoor) tagged
+courts anywhere findable, so no scenario here exercises a grass or an
+indoor pick -- every scenario now works with real hard/clay outdoor courts.
 
 Two scenario styles, per the project's design goal of stress-testing where
 each agent architecture resumes a long conversation from:
@@ -15,7 +24,7 @@ each agent architecture resumes a long conversation from:
   questions that don't fill any slot. Every agent has to resume from the
   right place despite this.
 
-The workflow has 15 steps (12 questions + 3 tool-action steps), so each
+The workflow has 16 steps (12 questions + 4 tool-action steps), so each
 scenario now touches more slots than a shorter workflow would -- more
 surface area for any architecture to drop or mix up a value.
 """
@@ -32,17 +41,17 @@ class ScriptedScenario:
     expected: dict = field(default_factory=dict)
 
 
-IN_ORDER_DOWNTOWN_CLAY = ScriptedScenario(
-    name="in_order_downtown_clay",
+IN_ORDER_GOLDEN_GATE_HARD = ScriptedScenario(
+    name="in_order_golden_gate_hard",
     style="in_order",
     turns=[
-        "Hi, I'd like to book a tennis court somewhere near downtown.",
+        "Hi, I'd like to book a tennis court somewhere near Golden Gate Park.",
         "I want to play on 2026-09-05.",
-        "I prefer clay courts.",
+        "I prefer hard courts.",
         "Let's do 90 minutes.",
         "It'll be doubles, so 4 players.",
         "Outdoor please.",
-        "Let's do the 12:00 slot.",
+        "Let's do the 12:00 slot -- whichever court is closest is fine.",
         "I'd say intermediate level.",
         "No thanks, I have my own racket.",
         "My name is Jordan Lee.",
@@ -51,9 +60,9 @@ IN_ORDER_DOWNTOWN_CLAY = ScriptedScenario(
         "No that's everything, thanks!",
     ],
     expected={
-        "area": "downtown",
+        "area": "Golden Gate Park",
         "date": "2026-09-05",
-        "surface": "clay",
+        "surface": "hard",
         "indoor_outdoor": "outdoor",
         "duration_minutes": 90,
         "num_players": 4,
@@ -66,18 +75,18 @@ IN_ORDER_DOWNTOWN_CLAY = ScriptedScenario(
 )
 
 
-MESSY_EASTSIDE_HARD_CORRECTION = ScriptedScenario(
-    name="messy_eastside_hard_correction",
+MESSY_PROSPECT_PARK_CLAY_CORRECTION = ScriptedScenario(
+    name="messy_prospect_park_clay_correction",
     style="messy",
     turns=[
         # No slot filled -- a tangential question the agent must answer
         # without losing its place in the workflow.
         "Before we start, what areas can you check courts in?",
         # Answers area AND player count together, out of the workflow's order.
-        "Ok let's go with eastside then. Also it'll just be me and a "
+        "Ok let's go with Prospect Park then. Also it'll just be me and a "
         "friend so 2 players.",
         # Bundles date + surface + indoor/outdoor into one message.
-        "I want to play on 2026-09-11, hard court, outdoor.",
+        "I want to play on 2026-09-11, clay court, outdoor.",
         # Corrects the date before duration (the last remaining slot) is
         # even given, so availability hasn't been searched yet.
         "Wait, actually let's do 2026-09-12 instead of the 11th.",
@@ -85,8 +94,8 @@ MESSY_EASTSIDE_HARD_CORRECTION = ScriptedScenario(
         # using the corrected date.
         "60 minutes please.",
         # Bundles time + skill level + equipment rental into one message.
-        "17:30 at Eastside Rec Center works great. I'm advanced level, "
-        "and I don't need a racket rental.",
+        "17:30 works great. I'm advanced level, and I don't need a racket "
+        "rental.",
         # Bundles name + email into one message.
         "Name's Priya Shah, email priya.shah@example.com.",
         "Yes go ahead and book that.",
@@ -96,9 +105,9 @@ MESSY_EASTSIDE_HARD_CORRECTION = ScriptedScenario(
         "Perfect, that's all I needed, thank you!",
     ],
     expected={
-        "area": "eastside",
+        "area": "Prospect Park",
         "date": "2026-09-12",
-        "surface": "hard",
+        "surface": "clay",
         "indoor_outdoor": "outdoor",
         "duration_minutes": 60,
         "num_players": 2,
@@ -111,20 +120,20 @@ MESSY_EASTSIDE_HARD_CORRECTION = ScriptedScenario(
 )
 
 
-MESSY_NORTHPARK_BULK_DUMP = ScriptedScenario(
-    name="messy_northpark_bulk_dump",
+MESSY_PROSPECT_PARK_BULK_DUMP = ScriptedScenario(
+    name="messy_prospect_park_bulk_dump",
     style="messy",
     turns=[
         "Hi! Can you help me book a tennis court?",
         # Answers area, then asks an unrelated question in the same breath.
-        "Sure -- somewhere in northpark, and by the way do you support "
-        "grass courts?",
+        "Sure -- somewhere in Prospect Park, and by the way how many courts "
+        "do you usually find nearby?",
         # Dumps four more slots into one message at once.
         "Let's play 2026-09-19. Actually, let me just give you "
         "everything: any surface is fine, indoor or outdoor doesn't "
         "matter, we're 4 players for 90 minutes.",
         # Bundles time + skill level + equipment rental (this time a "yes").
-        "The grass court at 14:00 looks good. I'm a beginner, and yes "
+        "16:00 looks good, closest court is fine. I'm a beginner, and yes "
         "I'll need to rent a racket please.",
         # Bundles name + email.
         "It's Sam Okafor, sam.okafor@example.com.",
@@ -134,20 +143,17 @@ MESSY_NORTHPARK_BULK_DUMP = ScriptedScenario(
         "Great, that's all, thank you!",
     ],
     expected={
-        "area": "northpark",
+        "area": "Prospect Park",
         "date": "2026-09-19",
         "surface": "any",
         "indoor_outdoor": "either",
         "duration_minutes": 90,
         "num_players": 4,
-        "time": "14:00",
+        "time": "16:00",
         "skill_level": "beginner",
         "equipment_rental": True,
         "contact_name": "Sam Okafor",
         "contact_email": "sam.okafor@example.com",
-        # The user's *specific* pick once they saw results was grass, even
-        # though their stated search preference was "any".
-        "booked_surface": "grass",
     },
 )
 
@@ -156,18 +162,19 @@ ZERO_RESULT_RELAX = ScriptedScenario(
     name="zero_result_relax",
     style="messy",
     turns=[
-        # downtown has no grass courts at all (see mock_courts.COURT_DIRECTORY)
-        # -- a legitimate zero-result search, not a bad area name. The agent
-        # must tell the user plainly and let them relax a preference instead
-        # of getting stuck or inventing a court.
-        "Hi, I'd like to book a court in downtown.",
+        # Newport has no grass-tagged courts in the recorded data (see
+        # evals/fixtures/live_courts/newport_hof.json) -- a legitimate
+        # zero-result search, not a bad area name. The agent must tell the
+        # user plainly and let them relax a preference instead of getting
+        # stuck or inventing a court.
+        "Hi, I'd like to book a court in Newport.",
         "2026-09-20",
         "grass, please",
         "90 minutes",
         "2 players, just singles",
         "outdoor",
         "Hmm, no grass courts? Let's try hard instead.",
-        "14:00 works",
+        "17:30 works, whichever court is closest",
         "intermediate",
         "no need, I have my own racket",
         "My name is Alex Rivera",
@@ -176,13 +183,13 @@ ZERO_RESULT_RELAX = ScriptedScenario(
         "No that's all, thanks!",
     ],
     expected={
-        "area": "downtown",
+        "area": "Newport",
         "date": "2026-09-20",
         "surface": "hard",
         "indoor_outdoor": "outdoor",
         "duration_minutes": 90,
         "num_players": 2,
-        "time": "14:00",
+        "time": "17:30",
         "skill_level": "intermediate",
         "equipment_rental": False,
         "contact_name": "Alex Rivera",
@@ -195,20 +202,20 @@ MESSY_DURATION_CHANGE_AFTER_SELECTION = ScriptedScenario(
     name="messy_duration_change_after_selection",
     style="messy",
     turns=[
-        "I'd like a court in eastside.",
+        "I'd like a court in Prospect Park.",
         "2026-09-21",
         "hard surface",
         "60 minutes",
         "4 players, doubles",
         "outdoor",
-        "10:00 works for me",
+        "12:00 works for me, closest court is fine",
         # Changes a search-input field (duration) *after* already picking a
         # time -- must invalidate the stale selection and re-search, per
         # STALE_SEARCH_GUIDANCE, even though this scenario picks a
         # *different* time the second time around (not the same one, so a
         # lazy "keep the old selection" bug can't accidentally pass).
         "Wait, actually let's make it 90 minutes instead of 60.",
-        "Let's do 16:00 instead",
+        "Let's do 17:30 instead, closest court is fine",
         "advanced level",
         "yes I'll need to rent a racket",
         "Name's Taylor Brooks",
@@ -217,13 +224,13 @@ MESSY_DURATION_CHANGE_AFTER_SELECTION = ScriptedScenario(
         "Great, thanks!",
     ],
     expected={
-        "area": "eastside",
+        "area": "Prospect Park",
         "date": "2026-09-21",
         "surface": "hard",
         "indoor_outdoor": "outdoor",
         "duration_minutes": 90,
         "num_players": 4,
-        "time": "16:00",
+        "time": "17:30",
         "skill_level": "advanced",
         "equipment_rental": True,
         "contact_name": "Taylor Brooks",
@@ -236,13 +243,13 @@ MESSY_MALFORMED_EMAIL_RETRY = ScriptedScenario(
     name="messy_malformed_email_retry",
     style="messy",
     turns=[
-        "Hey, can I book a tennis court in northpark?",
+        "Hey, can I book a tennis court in Golden Gate Park?",
         "2026-09-23",
         "any surface, don't mind",
         "60 minutes",
         "just me and a friend, singles",
         "indoor or outdoor doesn't matter",
-        "Let's do the hard court at 12:00.",
+        "Let's do 12:00, closest court is fine.",
         "beginner",
         "no thanks, got my own racket",
         "Morgan Diaz",
@@ -254,7 +261,7 @@ MESSY_MALFORMED_EMAIL_RETRY = ScriptedScenario(
         "Perfect, thank you!",
     ],
     expected={
-        "area": "northpark",
+        "area": "Golden Gate Park",
         "date": "2026-09-23",
         "surface": "any",
         "indoor_outdoor": "either",
@@ -265,10 +272,6 @@ MESSY_MALFORMED_EMAIL_RETRY = ScriptedScenario(
         "equipment_rental": False,
         "contact_name": "Morgan Diaz",
         "contact_email": "morgan.diaz@example.com",
-        # The user asked for "any" surface but picked the specific hard
-        # court once they saw results -- same booked_* override pattern as
-        # MESSY_NORTHPARK_BULK_DUMP above.
-        "booked_surface": "hard",
     },
 )
 
@@ -281,30 +284,28 @@ MESSY_ALL_AT_ONCE_OPENER = ScriptedScenario(
         # first message -- a harder version of the bulk-dump scenarios
         # above, which never bundle more than 4-5 fields at a time and never
         # do it on the opening turn.
-        "Hi! I want to book a tennis court in westside on 2026-09-24, any "
-        "surface, indoor or outdoor is fine, 120 minutes, 4 players "
+        "Hi! I want to book a tennis court in Discovery Park on 2026-09-23, "
+        "any surface, indoor or outdoor is fine, 120 minutes, 4 players "
         "(doubles). My name is Jamie Chen and my email is "
         "jamie.chen@example.com.",
-        "The indoor court at 17:30 please.",
+        "16:00 please, closest court is fine.",
         "intermediate",
         "No need for a racket rental",
         "Yes, please confirm and book it.",
         "That's everything, thanks!",
     ],
     expected={
-        "area": "westside",
-        "date": "2026-09-24",
+        "area": "Discovery Park",
+        "date": "2026-09-23",
         "surface": "any",
         "indoor_outdoor": "either",
         "duration_minutes": 120,
         "num_players": 4,
-        "time": "17:30",
+        "time": "16:00",
         "skill_level": "intermediate",
         "equipment_rental": False,
         "contact_name": "Jamie Chen",
         "contact_email": "jamie.chen@example.com",
-        "booked_surface": "indoor_carpet",
-        "booked_indoor_outdoor": "indoor",
     },
 )
 
@@ -313,17 +314,17 @@ MESSY_MULTI_FIELD_REDO = ScriptedScenario(
     name="messy_multi_field_redo",
     style="messy",
     turns=[
-        "I want to book a court in eastside.",
+        "I want to book a court in Prospect Park.",
         "2026-09-25",
         "clay surface",
-        # Redoes three already-answered fields at once, not just one --
-        # a harder version of the single-field correction scenarios above.
-        "Wait, actually, let's redo this: I'd rather play in northpark, "
-        "still on 2026-09-25, grass surface if possible.",
+        # Redoes two already-answered fields at once, not just one -- a
+        # harder version of the single-field correction scenarios above.
+        "Wait, actually, let's redo this: I'd rather play in Golden Gate "
+        "Park, still on 2026-09-25, hard surface if possible.",
         "90 minutes",
         "4 players, doubles",
         "outdoor",
-        "16:00 sounds great",
+        "16:00 sounds great, closest court is fine",
         "advanced",
         "no need, have my own",
         "Name is Riley Kim",
@@ -332,9 +333,9 @@ MESSY_MULTI_FIELD_REDO = ScriptedScenario(
         "Thanks, that's all!",
     ],
     expected={
-        "area": "northpark",
+        "area": "Golden Gate Park",
         "date": "2026-09-25",
-        "surface": "grass",
+        "surface": "hard",
         "indoor_outdoor": "outdoor",
         "duration_minutes": 90,
         "num_players": 4,
@@ -351,7 +352,7 @@ MESSY_DOUBLE_DATE_CORRECTION = ScriptedScenario(
     name="messy_double_date_correction",
     style="messy",
     turns=[
-        "Book me a court in eastside please.",
+        "Book me a court in Prospect Park please.",
         "2026-09-20",
         # First correction...
         "Hmm wait, actually make that 2026-09-21.",
@@ -362,7 +363,7 @@ MESSY_DOUBLE_DATE_CORRECTION = ScriptedScenario(
         "60 minutes",
         "2 players, singles",
         "outdoor",
-        "07:00 works",
+        "07:00 works, closest court is fine",
         "beginner",
         "yes, I'd like to rent a racket",
         "Casey Nguyen",
@@ -371,7 +372,7 @@ MESSY_DOUBLE_DATE_CORRECTION = ScriptedScenario(
         "Great, thank you!",
     ],
     expected={
-        "area": "eastside",
+        "area": "Prospect Park",
         "date": "2026-09-22",
         "surface": "hard",
         "indoor_outdoor": "outdoor",
@@ -394,10 +395,10 @@ MESSY_NAMED_COURT_INSTEAD_OF_AREA = ScriptedScenario(
         # instruction (workflow_steps.py) explicitly covers this: the agent
         # should ask which general area that court is in, not accept the
         # court name as the area value outright.
-        "I'd like to book at Northpark Lawn Club.",
-        "Oh sorry, that's in northpark.",
+        "I'd like to book at Discovery Park Tennis Court #1.",
+        "Oh sorry, that's in Discovery Park.",
         "2026-09-23",
-        "grass, obviously since that's the court",
+        "hard, obviously since that's the court",
         "90 minutes",
         "2 players",
         "outdoor",
@@ -410,9 +411,9 @@ MESSY_NAMED_COURT_INSTEAD_OF_AREA = ScriptedScenario(
         "Perfect, thanks!",
     ],
     expected={
-        "area": "northpark",
+        "area": "Discovery Park",
         "date": "2026-09-23",
-        "surface": "grass",
+        "surface": "hard",
         "indoor_outdoor": "outdoor",
         "duration_minutes": 90,
         "num_players": 2,
@@ -429,7 +430,7 @@ MESSY_OUT_OF_RANGE_DURATION = ScriptedScenario(
     name="messy_out_of_range_duration",
     style="messy",
     turns=[
-        "Looking to book a court in westside.",
+        "Looking to book a court in Golden Gate Park.",
         "2026-09-24",
         "hard court please",
         # Not one of 60/90/120 -- ask_duration's instruction says to suggest
@@ -438,7 +439,7 @@ MESSY_OUT_OF_RANGE_DURATION = ScriptedScenario(
         "Sure, 60 minutes is fine.",
         "4 players, doubles",
         "outdoor",
-        "10:00 works",
+        "10:00 works, closest court is fine",
         "advanced",
         "no, I have my own equipment",
         "Jordan Ellis",
@@ -447,7 +448,7 @@ MESSY_OUT_OF_RANGE_DURATION = ScriptedScenario(
         "Thank you, that's everything!",
     ],
     expected={
-        "area": "westside",
+        "area": "Golden Gate Park",
         "date": "2026-09-24",
         "surface": "hard",
         "indoor_outdoor": "outdoor",
@@ -463,9 +464,9 @@ MESSY_OUT_OF_RANGE_DURATION = ScriptedScenario(
 
 
 ALL_SCENARIOS: list[ScriptedScenario] = [
-    IN_ORDER_DOWNTOWN_CLAY,
-    MESSY_EASTSIDE_HARD_CORRECTION,
-    MESSY_NORTHPARK_BULK_DUMP,
+    IN_ORDER_GOLDEN_GATE_HARD,
+    MESSY_PROSPECT_PARK_CLAY_CORRECTION,
+    MESSY_PROSPECT_PARK_BULK_DUMP,
     ZERO_RESULT_RELAX,
     MESSY_DURATION_CHANGE_AFTER_SELECTION,
     MESSY_MALFORMED_EMAIL_RETRY,

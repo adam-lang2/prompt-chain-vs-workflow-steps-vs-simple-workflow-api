@@ -90,8 +90,11 @@ def step_is_current(step: Step, state: BookingState) -> bool:
     if step.key == "call_book_court":
         return state.ready_to_book() and state.summary_confirmed and not state.booking_confirmed
 
+    if step.key == "send_confirmation":
+        return state.booking_confirmed and not state.email_sent
+
     if step.key == "close_out":
-        return state.booking_confirmed
+        return state.email_sent
 
     # Ordinary slot-filling step.
     unmet = any(getattr(state, slot) in (None, "") for slot in step.slot_names)
@@ -110,7 +113,7 @@ def execute_tool_action(state: BookingState, step: Step) -> InternalToolCall:
     domain logic (what a tool-action step DOES), not step-computation logic
     (WHICH step is current), so it belongs here rather than in the engine
     itself."""
-    from tennis_booking.tools import run_book_court, run_search_availability
+    from tennis_booking.tools import run_book_court, run_search_availability, run_send_confirmation
 
     if step.key == "search_availability":
         args = {
@@ -138,6 +141,22 @@ def execute_tool_action(state: BookingState, step: Step) -> InternalToolCall:
         state.booking_confirmed = True
         state.confirmation_id = result["confirmation_id"]
         return InternalToolCall("book_court", args, result)
+    if step.key == "send_confirmation":
+        court_name = next(
+            (c.name for c in state.available_courts if c.court_id == state.selected_court_id),
+            state.selected_court_id,
+        )
+        args = {
+            "contact_email": state.contact_email,
+            "confirmation_id": state.confirmation_id,
+            "court_name": court_name,
+            "area": state.area,
+            "date": state.date,
+            "time": state.selected_time,
+        }
+        result = run_send_confirmation(args)
+        state.email_sent = True
+        return InternalToolCall("send_confirmation", args, result)
     raise AssertionError(f"unhandled tool-action step: {step.key}")
 
 
@@ -169,6 +188,9 @@ def step_payload(state: BookingState, step: Step) -> dict:
                 "name": c.name,
                 "surface": c.surface,
                 "indoor_outdoor": c.indoor_outdoor,
+                "address": c.address,
+                "rating": c.rating,
+                "distance_km": c.distance_km,
                 "open_times": [{"time": s.time, "price_usd": s.price_usd} for s in c.slots],
             }
             for c in state.available_courts

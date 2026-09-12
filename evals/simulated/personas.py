@@ -36,10 +36,10 @@ MESSY_PERSONA = Persona(
 )
 
 ORDERLY_DOWNTOWN_GOLDEN = ConversationalGolden(
-    name="orderly_downtown_clay",
+    name="orderly_prospect_park_clay",
     scenario=(
-        "A player wants to book a tennis court somewhere near downtown, "
-        "on 2026-09-05, on a clay surface, outdoors, for 90 minutes, "
+        "A player wants to book a tennis court somewhere near Prospect "
+        "Park, on 2026-09-05, on a clay surface, outdoors, for 90 minutes, "
         "doubles (4 players). They are happy to pick whatever time the "
         "assistant finds available, are an intermediate player who doesn't "
         "need to rent a racket, and will give their name as 'Jordan Lee' "
@@ -57,9 +57,9 @@ ORDERLY_DOWNTOWN_GOLDEN = ConversationalGolden(
 )
 
 MESSY_EASTSIDE_GOLDEN = ConversationalGolden(
-    name="messy_eastside_hard",
+    name="messy_golden_gate_park_hard",
     scenario=(
-        "A player wants to book a tennis court near eastside, on "
+        "A player wants to book a tennis court near Golden Gate Park, on "
         "2026-09-12 (though they'll first mention a different date before "
         "correcting themselves), on a hard surface, outdoors, for 60 "
         "minutes, singles (2 players). They are happy to pick whatever time "
@@ -70,7 +70,7 @@ MESSY_EASTSIDE_GOLDEN = ConversationalGolden(
     expected_outcome=(
         "Despite answering out of order, bundling multiple answers "
         "together, and correcting an earlier answer, the assistant ends up "
-        "with the corrected values (area=eastside, date=2026-09-12, "
+        "with the corrected values (area=Golden Gate Park, date=2026-09-12, "
         "surface=hard, indoor_outdoor=outdoor, duration=60, players=2), "
         "looks up real availability, lets the player pick a time, collects "
         "skill level, equipment rental need, name, and email, confirms, and "
@@ -116,10 +116,10 @@ OFF_TOPIC_DETOUR_PERSONA = Persona(
 )
 
 TERSE_WESTSIDE_GOLDEN = ConversationalGolden(
-    name="terse_westside_indoor",
+    name="terse_discovery_park_hard",
     scenario=(
-        "A player wants to book a tennis court in westside, on "
-        "2026-09-24, indoor_carpet surface, indoors, for 60 minutes, "
+        "A player wants to book a tennis court in Discovery Park, on "
+        "2026-09-24, hard surface, outdoors, for 60 minutes, "
         "singles (2 players). They'll take whatever time is available, are "
         "a beginner who needs to rent a racket, and will give their name as "
         "'Sam Wu' and email as 'sam.wu@example.com' when asked -- but only "
@@ -128,8 +128,8 @@ TERSE_WESTSIDE_GOLDEN = ConversationalGolden(
     expected_outcome=(
         "Despite the player's terse, single-fact-at-a-time answers, the "
         "assistant still collects every required field exactly once each "
-        "(area=westside, date=2026-09-24, surface=indoor_carpet, "
-        "indoor_outdoor=indoor, duration=60, players=2, skill=beginner, "
+        "(area=Discovery Park, date=2026-09-24, surface=hard, "
+        "indoor_outdoor=outdoor, duration=60, players=2, skill=beginner, "
         "equipment_rental=true, name='Sam Wu', "
         "email='sam.wu@example.com'), looks up real availability, confirms "
         "the full summary, and books the court with a confirmation number."
@@ -138,10 +138,10 @@ TERSE_WESTSIDE_GOLDEN = ConversationalGolden(
 )
 
 OVER_EXPLAINER_NORTHPARK_GOLDEN = ConversationalGolden(
-    name="over_explainer_northpark_grass",
+    name="over_explainer_newport_clay",
     scenario=(
-        "A player wants to book a tennis court in northpark, on "
-        "2026-09-25, grass surface, outdoors, for 90 minutes, doubles (4 "
+        "A player wants to book a tennis court in Newport, on "
+        "2026-09-25, clay surface, outdoors, for 90 minutes, doubles (4 "
         "players). They'll pick whatever time is available, are an "
         "intermediate player who doesn't need to rent a racket, and will "
         "give their name as 'Nadia Kowalski' and email as "
@@ -152,7 +152,7 @@ OVER_EXPLAINER_NORTHPARK_GOLDEN = ConversationalGolden(
     expected_outcome=(
         "Despite each answer arriving buried in extra, unrequested detail, "
         "the assistant correctly extracts just the real answer for every "
-        "field (area=northpark, date=2026-09-25, surface=grass, "
+        "field (area=Newport, date=2026-09-25, surface=clay, "
         "indoor_outdoor=outdoor, duration=90, players=4, "
         "skill=intermediate, equipment_rental=false, name='Nadia "
         "Kowalski', email='nadia.kowalski@example.com'), looks up real "
@@ -164,9 +164,9 @@ OVER_EXPLAINER_NORTHPARK_GOLDEN = ConversationalGolden(
 )
 
 OFF_TOPIC_DETOUR_EASTSIDE_GOLDEN = ConversationalGolden(
-    name="off_topic_detour_eastside_clay",
+    name="off_topic_detour_prospect_park_clay",
     scenario=(
-        "A player wants to book a tennis court in eastside, on "
+        "A player wants to book a tennis court in Prospect Park, on "
         "2026-09-26, clay surface, outdoors, for 90 minutes, doubles (4 "
         "players). They'll pick whatever time is available, are an "
         "advanced player who does not need to rent a racket, and will give "
@@ -178,7 +178,7 @@ OFF_TOPIC_DETOUR_EASTSIDE_GOLDEN = ConversationalGolden(
     expected_outcome=(
         "The assistant politely declines or redirects each out-of-scope "
         "question without pretending to answer it, then still collects "
-        "every required field (area=eastside, date=2026-09-26, "
+        "every required field (area=Prospect Park, date=2026-09-26, "
         "surface=clay, indoor_outdoor=outdoor, duration=90, players=4, "
         "skill=advanced, equipment_rental=false, name='Owen Baptiste', "
         "email='owen.baptiste@example.com'), looks up real availability, "

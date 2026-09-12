@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from tennis_booking.agents.base import ToolCallRecord
-from tennis_booking.mock_courts import find_listing
 
 EXPECTED_SEARCH_FIELDS = ("area", "date", "surface", "indoor_outdoor")
 EXPECTED_BOOK_FIELDS = (
@@ -92,6 +91,7 @@ def score_conversation(
         mismatches.extend(
             _validate_booked_court_consistency(
                 court_id=last_book.args.get("court_id"),
+                last_search=last_search,
                 # `booked_*` overrides let a scenario distinguish "any/either"
                 # search filters from the specific court the user actually
                 # picked once they saw results (see scripted scenario 3).
@@ -115,6 +115,7 @@ def score_conversation(
 
 def _validate_booked_court_consistency(
     court_id: str | None,
+    last_search: ToolCallRecord | None,
     expected_area: str | None,
     expected_surface: str | None,
     expected_indoor_outdoor: str | None,
@@ -123,24 +124,36 @@ def _validate_booked_court_consistency(
     we can't assert an exact id -- instead verify the booked court actually
     satisfies the user's stated constraints (a wrong-court booking is exactly
     the kind of silent failure this comparison is meant to catch).
+
+    The booked court is looked up in `last_search`'s own result rather than a
+    static directory -- there is no fixed court catalog once search_availability
+    is backed by a live/real lookup (see tools/live_courts.py), so the most
+    recent real search result is the only source of truth for what court_id
+    "osm_..." actually refers to.
     """
     if not court_id:
         return ["book_court.court_id was empty"]
-    listing = find_listing(court_id)
-    if listing is None:
-        return [f"book_court.court_id {court_id!r} does not match any known court"]
+    if last_search is None:
+        return [f"book_court.court_id {court_id!r} could not be verified -- search_availability was never called"]
+    court = next(
+        (c for c in last_search.result.get("courts", []) if c.get("court_id") == court_id),
+        None,
+    )
+    if court is None:
+        return [f"book_court.court_id {court_id!r} does not match any court from the last search_availability result"]
 
     problems: list[str] = []
-    if expected_area and expected_area.lower() not in listing.area and listing.area not in expected_area.lower():
-        problems.append(f"booked court area={listing.area!r}, expected near {expected_area!r}")
-    if expected_surface and expected_surface != "any" and listing.surface != expected_surface:
-        problems.append(f"booked court surface={listing.surface!r}, expected {expected_surface!r}")
+    area = str(court.get("area", ""))
+    if expected_area and expected_area.lower() not in area.lower() and area.lower() not in expected_area.lower():
+        problems.append(f"booked court area={area!r}, expected near {expected_area!r}")
+    if expected_surface and expected_surface != "any" and court.get("surface") != expected_surface:
+        problems.append(f"booked court surface={court.get('surface')!r}, expected {expected_surface!r}")
     if (
         expected_indoor_outdoor
         and expected_indoor_outdoor != "either"
-        and listing.indoor_outdoor != expected_indoor_outdoor
+        and court.get("indoor_outdoor") != expected_indoor_outdoor
     ):
         problems.append(
-            f"booked court indoor_outdoor={listing.indoor_outdoor!r}, expected {expected_indoor_outdoor!r}"
+            f"booked court indoor_outdoor={court.get('indoor_outdoor')!r}, expected {expected_indoor_outdoor!r}"
         )
     return problems

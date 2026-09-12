@@ -37,3 +37,9 @@ class CourtAvailability:
     surface: str
     indoor_outdoor: str
     slots: list[TimeSlot]
+    # Populated by the live court lookup (tennis_booking.tools.live_courts);
+    # left at these defaults by the offline mock directory, which has no
+    # equivalent real-world data to report.
+    address: str = ""
+    rating: float = 0.0
+    distance_km: float = 0.0

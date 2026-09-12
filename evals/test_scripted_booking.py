@@ -49,6 +49,7 @@ def test_scripted_booking(agent: AgentUnderTest, scenario: ScriptedScenario):
     assert score.booked, f"[{label}] agent never called book_court"
     assert not score.mismatches, f"[{label}] mismatches: {score.mismatches}"
 
+    # TODO fix comment make succinct, remove revision cruft
     # Generic across all three architectures (unlike the old per-agent
     # extra_invariant mechanism): every tool the agent was given must have
     # actually been called at least once -- e.g. this is what verifies the

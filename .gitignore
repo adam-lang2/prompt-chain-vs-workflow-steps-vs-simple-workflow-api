@@ -18,3 +18,4 @@ wheels/
 .deepeval_telemetry.txt
 deepeval_results/
 temp_test_run_data.json
+*.log

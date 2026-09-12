@@ -156,6 +156,9 @@ def test_confirm_booking_precedes_call_book_court():
     assert next_step_for(state).key == "call_book_court"
 
     state.booking_confirmed = True
+    assert next_step_for(state).key == "send_confirmation"
+
+    state.email_sent = True
     assert next_step_for(state).key == "close_out"
 
 
@@ -177,6 +180,7 @@ def test_workflow_complete_returns_none():
     state.selected_time = "12:00"
     state.summary_confirmed = True
     state.booking_confirmed = True
+    state.email_sent = True
     assert next_step_for(state).key == "close_out"
 
 

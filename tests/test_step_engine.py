@@ -152,6 +152,9 @@ def test_ask_time_response_embeds_real_availability_data():
             "name": c.name,
             "surface": c.surface,
             "indoor_outdoor": c.indoor_outdoor,
+            "address": c.address,
+            "rating": c.rating,
+            "distance_km": c.distance_km,
             "open_times": [{"time": s.time, "price_usd": s.price_usd} for s in c.slots],
         }
         for c in agent.state.available_courts
@@ -298,8 +301,8 @@ def test_full_conversation_reaches_close_out():
     assert result["time"] == open_time
 
     tool_names = [c.name for c in agent.internal_tool_calls]
-    assert tool_names == ["search_availability", "book_court"]
-    book_call = agent.internal_tool_calls[-1]
+    assert tool_names == ["search_availability", "book_court", "send_confirmation"]
+    book_call = agent.internal_tool_calls[-2]
     assert book_call.args["contact_name"] == "Jordan Lee"
     assert book_call.args["contact_email"] == "jordan.lee@example.com"
     assert book_call.args["skill_level"] == "intermediate"

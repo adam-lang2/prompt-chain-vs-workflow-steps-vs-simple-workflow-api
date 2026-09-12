@@ -66,6 +66,9 @@ class BookingState:
     booking_confirmed: bool = False
     confirmation_id: Optional[str] = None
 
+    # True once send_confirmation has run for this booking.
+    email_sent: bool = False
+
     def availability_searched(self) -> bool:
         return self.search_has_run
 

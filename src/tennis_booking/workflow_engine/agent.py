@@ -7,7 +7,6 @@ import re
 
 from tennis_booking.workflow_engine.step_engine_langgraph import LangGraphStepEngine
 from tennis_booking.workflow_engine.step_engine_shared import apply_field_change, step_payload
-from tennis_booking.mock_courts import KNOWN_AREAS
 from tennis_booking.workflow_engine.state import BookingState
 from tennis_booking.workflow_steps import STEPS, Step
 
@@ -61,6 +60,7 @@ SLOTS_BY_NODE: dict[str, tuple[str, ...]] = {
     "ask_contact_email": ("contact_email",),
     "confirm_booking": ("confirmed",),
     "call_book_court": (),
+    "send_confirmation": (),
     "close_out": (),
 }
 
@@ -85,11 +85,14 @@ def _as_int(value) -> int | None:
 
 
 def _validate_area(value):
-    if not isinstance(value, str):
-        return False, None, "area must be a string."
-    if value not in KNOWN_AREAS:
-        return False, None, f"'{value}' is not a known area. Use one of: {sorted(KNOWN_AREAS)}."
-    return True, value, None
+    """area is now free text -- geocoded for real by the live court lookup
+    (`tools/live_courts.py`) at search time, so there's no fixed allowlist
+    to validate against here. A bad/unresolvable location surfaces as a
+    tool-result error from search_availability instead (see
+    tools/search_availability.py)."""
+    if not isinstance(value, str) or not value.strip():
+        return False, None, "area must be a non-empty string."
+    return True, value.strip(), None
 
 
 def _validate_date(value):

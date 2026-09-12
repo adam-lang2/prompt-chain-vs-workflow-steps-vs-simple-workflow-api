@@ -17,8 +17,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from tennis_booking.mock_courts import KNOWN_AREAS
-
 # Kept here (not just inlined in the description string) so the description
 # text and the actual enum of legal `slot` values can never drift apart.
 _ALL_SLOTS: tuple[str, ...] = (
@@ -49,7 +47,8 @@ BOOK_TENNIS_COURT_TOOL: dict[str, Any] = {
         "regardless of which node is currently active. Omit `updates` "
         "entirely on the very first call of a conversation.\n\n"
         "Slot reference (name: type -- constraint):\n"
-        f"- area: string -- one of {sorted(KNOWN_AREAS)}\n"
+        "- area: string -- free text, e.g. a city or neighborhood ('downtown "
+        "Seattle'); it's geocoded for real, so any real-world location works\n"
         "- date: string -- ISO format, e.g. '2026-09-06'\n"
         "- surface: string -- one of hard, clay, grass, indoor_carpet, any\n"
         "- duration_minutes: number -- one of 60, 90, 120\n"
