@@ -1,11 +1,14 @@
 """Recorded Nominatim/Overpass responses for the scripted eval suite.
 
 `tools/live_courts.py` makes two real network calls per search
-(`_geocode`, `_query_overpass`) -- appropriate for a live comparison run, but
-wrong for `evals/test_scripted_booking.py`, which needs the exact same
-result for the exact same query on every run so a scenario's `expected`
-dict stays meaningful. `evals/conftest.py` monkeypatches those two functions
-to read from here instead, for every `eval`-marked test.
+(`_geocode`, `_query_overpass`), but `evals/scenarios/scripted.py`'s
+scenarios have fixed, literal user turns written against one specific
+recorded result -- real live data drifting out from under a scenario's
+scripted turns breaks scoring for reasons that have nothing to do with the
+agent or model under test. So every runner of STANDARD_SUITE monkeypatches
+those two functions to read from here instead: `evals/conftest.py` does it
+for every `eval`-marked pytest test, and `evals/compare.py` does the same
+for standalone `tennis-compare` runs.
 
 Each cassette file under `evals/fixtures/live_courts/<key>.json` is a real,
 one-time-recorded `{lat, lon, elements}` -- `lat`/`lon` came from a real

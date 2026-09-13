@@ -18,6 +18,8 @@ from __future__ import annotations
 # model slug -> (input $/1M tokens, output $/1M tokens)
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
     "deepseek/deepseek-v4-flash-20260731": (0.20, 0.60),
+    "openai/gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-5.6-luna": (0.20, 1.20),
 }
 
 

@@ -1,4 +1,4 @@
-"""workflow_engine -- FSMAgent, the backend behind `agents/simple_workflow_api_agent.py`.
+"""workflow_engine -- BookingWorkflowEngine, the backend behind `agents/simple_workflow_api_agent.py`.
 
 Agent-1's only tool takes a single `updates` array of `{slot, value}`
 deltas (`BOOK_TENNIS_COURT_TOOL`, see tools/book_tennis_court.py), so there
@@ -7,7 +7,7 @@ is nothing here to parse from free text -- only to validate
 per-slot type/enum on a value whose shape depends on a sibling `slot`
 property.
 
-FSMAgent is a thin subclass of `LangGraphStepEngine` (`step_engine_langgraph.py`)
+BookingWorkflowEngine is a thin subclass of `LangGraphStepEngine` (`step_engine_langgraph.py`)
 -- it reuses that class's `langgraph.graph.StateGraph` step engine
 (`_advance_past_tool_actions`, `self._graph`) and
 `step_engine_shared.step_payload`'s response shaping (reshaped into this
@@ -25,7 +25,7 @@ just because the input arrives structured.
 
 This package holds the whole non-LLM step-computation family:
 `step_engine_langgraph.py` (`LangGraphStepEngine`, the
-`langgraph.graph.StateGraph` engine FSMAgent subclasses),
+`langgraph.graph.StateGraph` engine BookingWorkflowEngine subclasses),
 `step_engine_shared.py` (the domain logic every step-computation engine
 needs regardless of how it decides "which step is current": `step_is_current`
 the per-step "is this still unmet" guard, `execute_tool_action` for running
@@ -40,7 +40,7 @@ than scattered at the top of the `tennis_booking` package.
 """
 from __future__ import annotations
 
-from tennis_booking.workflow_engine.agent import SLOT_TO_NODE, SLOTS_BY_NODE, FSMAgent
+from tennis_booking.workflow_engine.agent import SLOT_TO_NODE, SLOTS_BY_NODE, BookingWorkflowEngine
 from tennis_booking.workflow_engine.state import (
     REQUIRED_SLOTS,
     SEARCH_INPUT_SLOTS,
@@ -49,7 +49,7 @@ from tennis_booking.workflow_engine.state import (
 from tennis_booking.workflow_engine.step_engine_langgraph import LangGraphStepEngine
 
 __all__ = [
-    "FSMAgent",
+    "BookingWorkflowEngine",
     "SLOT_TO_NODE",
     "SLOTS_BY_NODE",
     "LangGraphStepEngine",

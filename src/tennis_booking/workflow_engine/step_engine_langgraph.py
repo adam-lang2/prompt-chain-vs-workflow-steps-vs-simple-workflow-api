@@ -1,4 +1,4 @@
-"""LangGraphStepEngine -- the non-LLM step-computation engine `FSMAgent`
+"""LangGraphStepEngine -- the non-LLM step-computation engine `BookingWorkflowEngine`
 (`agent.py`, backing `BOOK_TENNIS_COURT_TOOL` / `agents/simple_workflow_api_agent.py`)
 subclasses, backed by a `langgraph.graph.StateGraph`: a single `route` node
 whose conditional edges -- guarded by `step_engine_shared.step_is_current`,
@@ -6,7 +6,7 @@ evaluated in STEPS order -- decide which step is current, tool-action steps
 (search_availability, call_book_court) are their own graph nodes that run
 `step_engine_shared.execute_tool_action` as a side effect and edge straight
 back to `route`, and every other step is a terminal node (an edge to END)
-that reports which step it is. `FSMAgent` reuses `_advance_past_tool_actions`/
+that reports which step it is. `BookingWorkflowEngine` reuses `_advance_past_tool_actions`/
 `self._graph` from this class and layers its own `handle()` (a typed
 `{"updates": [...]}` dict, not free text) on top -- see `agent.py`.
 """
@@ -38,7 +38,7 @@ class _GraphState(TypedDict, total=False):
 class LangGraphStepEngine:
     """Independent, non-LLM step machine backed by a compiled
     `langgraph.graph.StateGraph`. Owns only step computation
-    (`_advance_past_tool_actions`) -- `FSMAgent` (`agent.py`) is what turns
+    (`_advance_past_tool_actions`) -- `BookingWorkflowEngine` (`agent.py`) is what turns
     that into a tool response.
     """
 

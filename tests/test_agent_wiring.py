@@ -76,7 +76,7 @@ def test_prompt_chain_agent_calls_get_next_step_with_minimal_payload():
 
 def test_simple_workflow_api_uses_the_structured_schema():
     # book_tennis_court takes an `updates` array of {slot, value} deltas --
-    # setting `area` directly as a slot should land on FSMAgent's state and
+    # setting `area` directly as a slot should land on BookingWorkflowEngine's state and
     # advance to ask_date, same as any other single-slot update.
     fake_client = FakeOpenAIClient(
         scripted_responses=[
@@ -135,9 +135,9 @@ def test_simple_workflow_api_accepts_multiple_slots_in_one_call():
 
 def test_simple_workflow_api_folds_internal_tool_calls_into_the_log():
     # Updates that complete the whole workflow up to search_availability
-    # make FSMAgent execute search_availability itself, as a side effect of
+    # make BookingWorkflowEngine execute search_availability itself, as a side effect of
     # one book_tennis_court call -- that internal call must show up in the
-    # agent's own tool_call_log too, not just FSMAgent's private list.
+    # agent's own tool_call_log too, not just BookingWorkflowEngine's private list.
     fake_client = FakeOpenAIClient(
         scripted_responses=[
             FakeResponse(

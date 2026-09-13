@@ -1,4 +1,4 @@
-"""FSMAgent itself -- see `tennis_booking.workflow_engine`'s package docstring
+"""BookingWorkflowEngine itself -- see `tennis_booking.workflow_engine`'s package docstring
 (`__init__.py`) for the full architectural rationale.
 """
 from __future__ import annotations
@@ -222,7 +222,7 @@ def _node_error(step: Step, message: str) -> dict:
     }
 
 
-class FSMAgent(LangGraphStepEngine):
+class BookingWorkflowEngine(LangGraphStepEngine):
     """Backend for `book_tennis_court`: reuses `LangGraphStepEngine`'s step
     computation, but `handle()` takes an already-validated
     `{"updates": [{"slot", "value"}, ...]}` dict instead of a free-text

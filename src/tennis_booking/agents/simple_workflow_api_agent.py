@@ -1,6 +1,6 @@
 """simple-workflow-api -- agent-1 (a plain tool-calling loop, no workflow
 knowledge of its own) talks to a deterministic workflow API instead of
-tracking the conversation itself: agent-2, `FSMAgent` (`workflow_engine/`), is not
+tracking the conversation itself: agent-2, `BookingWorkflowEngine` (`workflow_engine/`), is not
 an LLM at all, but a non-LLM step machine that owns the workflow. Agent-1's
 only tool, `book_tennis_court` (`BOOK_TENNIS_COURT_TOOL`, see
 tools/book_tennis_court.py), takes a single `updates` array of
@@ -11,19 +11,19 @@ once, every slot always legal regardless of which node is currently active.
 See tools/__init__.py's and workflow_engine/__init__.py's docstrings for the full
 rationale behind that schema shape.
 
-`FSMAgent`'s own step-computation engine is `LangGraphStepEngine`
+`BookingWorkflowEngine`'s own step-computation engine is `LangGraphStepEngine`
 (`langgraph.graph.StateGraph`, see `workflow_engine/step_engine_langgraph.py`): a
 `route` node whose conditional edges are guarded by `step_is_current`
 (evaluated over `STEPS` in order), with `search_availability`/
 `call_book_court` as tool-action nodes that mutate `BookingState` and loop
-back to `route`. That engine choice is internal to `FSMAgent` -- nothing
+back to `route`. That engine choice is internal to `BookingWorkflowEngine` -- nothing
 here, or in `BOOK_TENNIS_COURT_TOOL`'s schema, depends on which engine
 backs it.
 """
 from __future__ import annotations
 
 from tennis_booking.agents.base import ConversationAgent, ToolCallRecord
-from tennis_booking.workflow_engine import FSMAgent
+from tennis_booking.workflow_engine import BookingWorkflowEngine
 from tennis_booking.tools import BOOK_TENNIS_COURT_TOOL
 from tennis_booking.workflow_steps import GROUNDING_GUIDANCE, STALE_SEARCH_GUIDANCE
 
@@ -62,10 +62,10 @@ never say or imply otherwise, even right after the user confirms.
 def create_agent(state=None, client=None) -> ConversationAgent:
     """`client` lets tests inject a fake OpenAI-shaped client; leave it unset
     to use a real one (requires OPENROUTER_API_KEY). `state` is accepted
-    (and passed straight through to FSMAgent) only for symmetry with the
-    other `create_agent()` factories -- FSMAgent constructs its own
+    (and passed straight through to BookingWorkflowEngine) only for symmetry with the
+    other `create_agent()` factories -- BookingWorkflowEngine constructs its own
     BookingState when none is given."""
-    fsm_agent = FSMAgent(state)
+    fsm_agent = BookingWorkflowEngine(state)
 
     def _book_tennis_court(args: dict) -> dict:
         before = len(fsm_agent.internal_tool_calls)

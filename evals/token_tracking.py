@@ -23,23 +23,49 @@ from evals.pricing import cost_for_call
 from tennis_booking.agents.base import ConversationAgent
 
 _SAMPLES: list["UsageSample"] = []
+_TURN_SAMPLES: list["TurnSample"] = []
 
 
 @dataclass(frozen=True)
 class UsageSample:
     agent_id: str
+    model: str
     input_tokens: int
     output_tokens: int
     latency_ms: float = 0.0
     cost_usd: float | None = None
 
 
-def record_usage(agent_id: str, agent: ConversationAgent) -> None:
+@dataclass(frozen=True)
+class TurnSample:
+    """One per finished conversation. `max_tool_calls_in_a_turn` is that
+    conversation's worst-case round-trip count for a single turn (see
+    ConversationAgent.max_tool_calls_in_a_turn); `turn_latency_ms` is the
+    per-turn wall-clock list (ConversationAgent.turn_latencies_ms) -- kept
+    together so report.py can both take the max across conversations and
+    flatten every turn's latency into one percentile."""
+
+    agent_id: str
+    model: str
+    max_tool_calls_in_a_turn: int
+    turn_latencies_ms: list[float]
+
+
+def record_usage(agent_id: str, agent: ConversationAgent, model: str | None = None) -> None:
     """Call once after finishing a conversation with `agent`, to fold its
     per-call usage log into the session-wide accounting. Cost is computed
     here (not carried on UsageRecord itself) from `pricing.py`'s per-model
-    table, since it depends on which model the agent actually ran -- left
-    None when that model isn't priced."""
+    table, keyed off `agent.model` (the actual OpenRouter slug the calls
+    were billed under) regardless of `model` -- left None when that model
+    isn't priced. `model` is the report grouping key and defaults to
+    `agent.model`; pass it explicitly when the two need to differ, e.g.
+    `evals/compare.py`'s `model:effort` syntax reports
+    "openai/gpt-5.6-luna:none" as its own row (distinct from a run of the
+    same model at a different effort) while still billing/pricing as plain
+    "openai/gpt-5.6-luna". report.py groups by (agent_id, model), not agent_id
+    alone, since one process can point different conversations at different
+    models."""
+    model = model if model is not None else agent.model
     for record in agent.usage_log:
         cost_usd = getattr(record, "cost_usd", None)
         if cost_usd is None:
@@ -47,17 +73,31 @@ def record_usage(agent_id: str, agent: ConversationAgent) -> None:
         _SAMPLES.append(
             UsageSample(
                 agent_id=agent_id,
+                model=model,
                 input_tokens=record.input_tokens,
                 output_tokens=record.output_tokens,
                 latency_ms=getattr(record, "latency_ms", 0.0),
                 cost_usd=cost_usd,
             )
         )
+    _TURN_SAMPLES.append(
+        TurnSample(
+            agent_id=agent_id,
+            model=model,
+            max_tool_calls_in_a_turn=agent.max_tool_calls_in_a_turn,
+            turn_latencies_ms=list(agent.turn_latencies_ms),
+        )
+    )
 
 
 def all_samples() -> list[UsageSample]:
     return list(_SAMPLES)
 
 
+def all_turn_samples() -> list[TurnSample]:
+    return list(_TURN_SAMPLES)
+
+
 def clear() -> None:
     _SAMPLES.clear()
+    _TURN_SAMPLES.clear()

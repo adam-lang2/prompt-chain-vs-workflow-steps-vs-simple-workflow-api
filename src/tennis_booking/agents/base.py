@@ -38,7 +38,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "deepseek/deepseek-v4-flash-20260731"
+# Overridable via TENNIS_BOOKING_MODEL so a stress-test run can point every
+# agent at a different OpenRouter model without touching each agent's
+# create_agent() -- none of them pass `model=` explicitly, so they all pick
+# this up through ConversationAgent's dataclass default.
+DEFAULT_MODEL = os.environ.get("TENNIS_BOOKING_MODEL", "deepseek/deepseek-v4-flash-20260731")
 MAX_TOOL_ITERATIONS_PER_TURN = 8
 # No timeout previously meant a stalled OpenRouter connection could hang
 # this loop indefinitely with no error and no log line -- set an explicit
@@ -57,6 +61,12 @@ REQUEST_MAX_RETRIES = 3
 # spikes traced to specific providers in that pool), with max_price as a
 # guardrail so the latency hunt can't land on an unexpectedly expensive one.
 PROVIDER_ROUTING = {"sort": "latency", "max_price": {"prompt": 0.20}}
+
+# Overridable via TENNIS_BOOKING_REASONING_EFFORT (e.g. "none", "low", "high")
+# for stress-testing a reasoning-capable model with its reasoning turned down
+# or off -- see OpenRouter's reasoning-tokens docs. None means "don't send
+# the field at all", not every model accepts it the same way.
+REASONING_EFFORT = os.environ.get("TENNIS_BOOKING_REASONING_EFFORT")
 
 # Set TENNIS_BOOKING_DEBUG_TIMING=1 to log every model call and tool
 # execution's wall-clock time to stderr -- added to debug a run that took
@@ -121,11 +131,29 @@ class ConversationAgent:
     tools: list[dict[str, Any]]
     tool_executors: dict[str, Callable[[dict], dict]]
     model: str = DEFAULT_MODEL
+    # Per-agent-run override of the reasoning effort sent to the model (e.g.
+    # "none", "low", "high") -- defaults to the process-wide
+    # TENNIS_BOOKING_REASONING_EFFORT env var, but callers comparing several
+    # models in one process (see evals/compare.py's `model:effort` syntax)
+    # need to vary this per (agent, model) pair, not just once per process.
+    reasoning_effort: str | None = field(default_factory=lambda: REASONING_EFFORT)
     client: openai.OpenAI | None = None
 
     messages: list[dict] = field(default_factory=list)
     tool_call_log: list[ToolCallRecord] = field(default_factory=list)
     usage_log: list[UsageRecord] = field(default_factory=list)
+    # Turn numbers where the model never stopped calling tools within
+    # MAX_TOOL_ITERATIONS_PER_TURN -- a distinct failure mode from "the model
+    # made a wrong choice" (evals assert this stays empty; see
+    # test_scripted_booking.py).
+    exceeded_iteration_limit_turns: list[int] = field(default_factory=list)
+    # Wall-clock ms per turn, end-to-end from receiving the user's message to
+    # producing the reply -- includes every model call *and* every tool
+    # execution in that turn, so it's the number that actually matters to a
+    # user waiting on a response (as opposed to UsageRecord.latency_ms, which
+    # times one model call in isolation). One entry per send_user_message
+    # call, in turn order.
+    turn_latencies_ms: list[float] = field(default_factory=list)
     _turn: int = 0
 
     def __post_init__(self) -> None:
@@ -136,9 +164,24 @@ class ConversationAgent:
     def turn_count(self) -> int:
         return self._turn
 
+    @property
+    def max_tool_calls_in_a_turn(self) -> int:
+        """The most tool calls this conversation ever made within a single
+        turn -- the concrete number behind "how many round-trips can a turn
+        need" (see MAX_TOOL_ITERATIONS_PER_TURN), reported per-agent in
+        evals/report.py so it's visible whether an architecture is
+        structurally closer to that cap than others."""
+        if not self.tool_call_log:
+            return 0
+        counts: dict[int, int] = {}
+        for record in self.tool_call_log:
+            counts[record.turn] = counts.get(record.turn, 0) + 1
+        return max(counts.values())
+
     def send_user_message(self, text: str) -> str:
         """Append a user turn, run the tool-use loop, return the agent's reply text."""
         self._turn += 1
+        turn_start = time.perf_counter()
         self.messages.append({"role": "user", "content": text})
 
         openai_tools = [_to_openai_tool(t) for t in self.tools] if self.tools else None
@@ -147,11 +190,14 @@ class ConversationAgent:
             request_messages = [{"role": "system", "content": self.system_prompt}, *self.messages]
             _debug(f"turn {self._turn} iter {iteration}: chat.completions.create starting ({len(request_messages)} messages)")
             call_start = time.perf_counter()
+            extra_body: dict[str, Any] = {"provider": PROVIDER_ROUTING}
+            if self.reasoning_effort:
+                extra_body["reasoning"] = {"effort": self.reasoning_effort}
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=request_messages,
                 tools=openai_tools,
-                extra_body={"provider": PROVIDER_ROUTING},
+                extra_body=extra_body,
             )
             latency_ms = (time.perf_counter() - call_start) * 1000
             _debug(f"turn {self._turn} iter {iteration}: chat.completions.create finished in {latency_ms:.0f}ms")
@@ -179,6 +225,7 @@ class ConversationAgent:
             self.messages.append(assistant_message)
 
             if not tool_calls:
+                self.turn_latencies_ms.append((time.perf_counter() - turn_start) * 1000)
                 return (message.content or "").strip()
 
             for tc in tool_calls:
@@ -202,6 +249,8 @@ class ConversationAgent:
                     }
                 )
 
+        self.exceeded_iteration_limit_turns.append(self._turn)
+        self.turn_latencies_ms.append((time.perf_counter() - turn_start) * 1000)
         return "[agent exceeded max tool iterations for this turn]"
 
 # A pydantic-validating tool-call parser (e.g. LangChain's) would reject

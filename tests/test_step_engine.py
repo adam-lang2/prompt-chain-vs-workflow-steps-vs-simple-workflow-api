@@ -1,4 +1,4 @@
-"""Unit tests for `FSMAgent` -- the non-LLM step machine behind
+"""Unit tests for `BookingWorkflowEngine` -- the non-LLM step machine behind
 `agents/simple_workflow_api_agent.py` (`book_tennis_court`'s `{"updates": [...]}`
 schema). Pure Python, no LLM calls, no API key needed.
 
@@ -7,12 +7,12 @@ This is the only place `LangGraphStepEngine`'s step computation
 (`step_is_current`, `execute_tool_action`, `step_payload`,
 `FIELD_DEPENDENTS`) get exercised directly, rather than through the fake
 Chat-Completions wiring in `test_agent_wiring.py` (which only smoke-tests
-that a tool call reaches `FSMAgent.handle` at all, not the workflow logic
+that a tool call reaches `BookingWorkflowEngine.handle` at all, not the workflow logic
 itself).
 """
 from __future__ import annotations
 
-from tennis_booking.workflow_engine import FSMAgent
+from tennis_booking.workflow_engine import BookingWorkflowEngine
 from tennis_booking.workflow_steps import STEPS
 
 _INSTRUCTION_BY_KEY = {s.key: s.instruction for s in STEPS}
@@ -22,7 +22,7 @@ def _update(slot: str, value) -> dict:
     return {"updates": [{"slot": slot, "value": value}]}
 
 
-def _fill_through_indoor_outdoor(agent: FSMAgent) -> dict:
+def _fill_through_indoor_outdoor(agent: BookingWorkflowEngine) -> dict:
     agent.handle(_update("area", "downtown"))
     agent.handle(_update("date", "2026-09-05"))
     agent.handle(_update("surface", "clay"))
@@ -32,7 +32,7 @@ def _fill_through_indoor_outdoor(agent: FSMAgent) -> dict:
 
 
 def test_bootstrap_call_returns_first_step_without_error():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = agent.handle({})
     assert result["current_node"] == "ask_area"
     assert result["instructions"] == _INSTRUCTION_BY_KEY["ask_area"]
@@ -44,7 +44,7 @@ def test_empty_call_after_the_first_is_rejected_not_silently_replayed():
     # unchanged, and then narrated a fabricated confirmation the tool never
     # actually gave it. A later empty call must surface as a clear error
     # instead of looking like a harmless no-op repeat of the current node.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle({})  # legitimate bootstrap -- must NOT itself error
     result = agent.handle({})
     assert "error" in result
@@ -58,7 +58,7 @@ def test_bootstrap_call_includes_upcoming_instructions_through_the_pre_search_ru
     # handed back at once so agent-1 can ask them one at a time without
     # re-calling the tool just to learn what's next. search_availability
     # itself is a tool-action, not chainable, so the run stops there.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = agent.handle({})
     assert [s["current_node"] for s in result["upcoming_instructions"]] == [
         "ask_date",
@@ -74,7 +74,7 @@ def test_bootstrap_call_includes_upcoming_instructions_through_the_pre_search_ru
 def test_upcoming_instructions_omits_already_answered_steps_but_keeps_scanning():
     # A forward-filled field mid-run shouldn't end the run early, just be
     # left out of the list -- it's already known, nothing left to ask.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = agent.handle(
         {"updates": [{"slot": "area", "value": "eastside"}, {"slot": "duration_minutes", "value": 90}]}
     )
@@ -88,7 +88,7 @@ def test_upcoming_instructions_omits_already_answered_steps_but_keeps_scanning()
 def test_upcoming_instructions_absent_for_a_non_chainable_step():
     # ask_time depends on real search results and confirm_booking branches
     # on the user's answer -- neither should advertise a further run.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(
         {
             "updates": [
@@ -108,14 +108,14 @@ def test_upcoming_instructions_absent_for_a_non_chainable_step():
 
 
 def test_unrecognized_slot_is_rejected():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = agent.handle(_update("favorite_color", "blue"))
     assert "favorite_color" in result.get("errors", {})
     assert result["current_node"] == "ask_area"
 
 
 def test_bad_value_returns_error_without_advancing():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = agent.handle(_update("date", "next Saturday"))  # not ISO
     assert "date" in result.get("errors", {})
     assert result["current_node"] == "ask_area"
@@ -123,14 +123,14 @@ def test_bad_value_returns_error_without_advancing():
 
 
 def test_valid_value_advances():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = agent.handle(_update("area", "downtown"))
     assert result["current_node"] == "ask_date"
     assert agent.state.area == "downtown"
 
 
 def test_search_availability_auto_executes_and_returns_ask_time():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = _fill_through_indoor_outdoor(agent)
     assert result["current_node"] == "ask_time"
     assert agent.state.availability_searched()
@@ -139,11 +139,11 @@ def test_search_availability_auto_executes_and_returns_ask_time():
 
 
 def test_ask_time_response_embeds_real_availability_data():
-    # Agent-1 never calls search_availability itself (only FSMAgent does,
+    # Agent-1 never calls search_availability itself (only BookingWorkflowEngine does,
     # internally) -- so unless the real courts/times are embedded in this
     # response, agent-1 would have nothing to relay to the user except
     # invented options.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = _fill_through_indoor_outdoor(agent)
     assert "available_courts" in result
     assert result["available_courts"] == [
@@ -167,7 +167,7 @@ def test_ask_time_response_notes_zero_results_instead_of_looping():
     # downtown has no grass courts (see mock_courts.COURT_DIRECTORY) -- a
     # real, known area with a real preference combination that just
     # happens to match nothing.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "downtown"))
     agent.handle(_update("date", "2026-09-05"))
     agent.handle(_update("surface", "grass"))
@@ -184,7 +184,7 @@ def test_ask_time_response_notes_zero_results_instead_of_looping():
 
 
 def test_selected_time_matches_against_real_search_results():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _fill_through_indoor_outdoor(agent)
     open_time = agent.state.available_courts[0].slots[0].time
 
@@ -200,7 +200,7 @@ def test_court_hint_disambiguates_when_two_courts_share_a_time():
     # surface instead of naming it must not silently fall through to "any
     # court with this open time," which can pick the WRONG court whenever
     # two courts share a slot.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "northpark"))
     agent.handle(_update("date", "2026-09-19"))
     agent.handle(_update("surface", "any"))
@@ -223,7 +223,7 @@ def test_court_hint_disambiguates_when_two_courts_share_a_time():
 
 
 def test_court_hint_without_selected_time_in_the_same_call_is_rejected():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _fill_through_indoor_outdoor(agent)
 
     result = agent.handle(_update("court_hint", "grass"))
@@ -233,7 +233,7 @@ def test_court_hint_without_selected_time_in_the_same_call_is_rejected():
 
 
 def test_selected_time_rejects_a_time_not_actually_open():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _fill_through_indoor_outdoor(agent)
 
     result = agent.handle(_update("selected_time", "03:17"))  # not a real slot time
@@ -242,7 +242,7 @@ def test_selected_time_rejects_a_time_not_actually_open():
     assert agent.state.selected_time is None
 
 
-def _finish_to_confirm_booking(agent: FSMAgent) -> dict:
+def _finish_to_confirm_booking(agent: BookingWorkflowEngine) -> dict:
     _fill_through_indoor_outdoor(agent)
     open_time = agent.state.available_courts[0].slots[0].time
     agent.handle(_update("selected_time", open_time))
@@ -253,7 +253,7 @@ def _finish_to_confirm_booking(agent: FSMAgent) -> dict:
 
 
 def test_confirm_booking_response_embeds_full_summary():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = _finish_to_confirm_booking(agent)
     open_time = agent.state.selected_time
 
@@ -270,7 +270,7 @@ def test_confirm_booking_response_embeds_full_summary():
 
 
 def test_confirmed_false_rejects_without_booking():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _finish_to_confirm_booking(agent)
 
     result = agent.handle(_update("confirmed", False))
@@ -281,13 +281,13 @@ def test_confirmed_false_rejects_without_booking():
 
 
 def test_confirmed_before_ready_to_book_is_rejected():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     result = agent.handle(_update("confirmed", True))
     assert "confirmed" in result.get("errors", {})
 
 
 def test_full_conversation_reaches_close_out():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _finish_to_confirm_booking(agent)
     open_time = agent.state.selected_time
 
@@ -316,7 +316,7 @@ def test_correction_before_first_search_is_applied_and_used_by_search():
     # Regression: a date correction arriving before the very first
     # search_availability call must not be silently dropped or shipped
     # stale.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "eastside"))
     agent.handle(_update("date", "2026-09-11"))
     agent.handle(_update("surface", "hard"))
@@ -338,7 +338,7 @@ def test_correction_before_first_search_is_applied_and_used_by_search():
 
 
 def test_correction_after_search_triggers_a_fresh_search():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _fill_through_indoor_outdoor(agent)
     assert len(agent.internal_tool_calls) == 1  # first search has run
     open_time = agent.state.available_courts[0].slots[0].time
@@ -359,7 +359,7 @@ def test_correction_after_search_triggers_a_fresh_search():
 
 
 def test_correction_to_leaf_field_does_not_reask_unrelated_fields():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _finish_to_confirm_booking(agent)
     assert agent.state.area == "downtown"  # unaffected reference point
 
@@ -377,7 +377,7 @@ def test_multi_slot_update_applies_all_of_them_in_workflow_order():
     # A single call naming several different fields must apply ALL of them,
     # not just the first -- this is what lets agent-1 report a bulk-dumped
     # user message in one round trip instead of one call per field.
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "northpark"))
 
     result = agent.handle(
@@ -413,7 +413,7 @@ def test_multi_slot_update_applies_all_of_them_in_workflow_order():
 
 
 def test_multi_slot_update_can_forward_fill_a_step_not_yet_reached():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "eastside"))
     agent.handle(_update("date", "2026-09-11"))
 
@@ -439,7 +439,7 @@ def test_multi_slot_update_can_forward_fill_a_step_not_yet_reached():
 
 
 def test_multi_slot_update_reports_partial_failure_without_dropping_successes():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "eastside"))
     agent.handle(_update("date", "2026-09-11"))
 
@@ -455,7 +455,7 @@ def test_multi_slot_update_reports_partial_failure_without_dropping_successes():
 
 
 def test_duplicate_slot_in_one_call_is_rejected():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "eastside"))
 
     result = agent.handle({"updates": [{"slot": "date", "value": "2026-09-11"}, {"slot": "date", "value": "2026-09-12"}]})
@@ -466,7 +466,7 @@ def test_duplicate_slot_in_one_call_is_rejected():
 
 
 def test_empty_string_value_is_rejected_instead_of_clearing_the_slot():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "eastside"))
 
     result = agent.handle(_update("date", ""))
@@ -476,7 +476,7 @@ def test_empty_string_value_is_rejected_instead_of_clearing_the_slot():
 
 
 def test_correction_rejected_after_booking_confirmed():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     _finish_to_confirm_booking(agent)
     agent.handle(_update("confirmed", True))
     assert agent.state.booking_confirmed
@@ -488,7 +488,7 @@ def test_correction_rejected_after_booking_confirmed():
 
 
 def test_correction_matching_the_current_stored_value_is_a_no_op():
-    agent = FSMAgent()
+    agent = BookingWorkflowEngine()
     agent.handle(_update("area", "eastside"))
     agent.handle(_update("date", "2026-09-11"))
     agent.handle(_update("surface", "hard"))

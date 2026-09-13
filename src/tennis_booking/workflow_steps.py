@@ -13,7 +13,7 @@ Every agent architecture implements the *same* workflow defined here:
   fresh, dynamically chained prompt fragment per turn, rather than one fixed
   prompt.
 - The simple-workflow-api agent (`agents/simple_workflow_api_agent.py`) doesn't
-  give the model a `next_step_for`-shaped tool at all: `FSMAgent`
+  give the model a `next_step_for`-shaped tool at all: `BookingWorkflowEngine`
   (`workflow_engine/`) is a separate, non-LLM step machine built from these
   same `STEPS` (see `workflow_engine/step_engine_shared.py`'s
   `step_is_current`/`step_payload`) that the model's one tool call reports

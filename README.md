@@ -25,7 +25,7 @@ workflow:
   `{slot, value}` deltas -- any combination, in one call: a correction to
   something answered earlier, the current node's answer, one or more
   not-yet-reached nodes the user already answered, or several of these at
-  once. That tool's handler delegates to `FSMAgent` (`workflow_engine/`) — agent-2,
+  once. That tool's handler delegates to `BookingWorkflowEngine` (`workflow_engine/`) — agent-2,
   not an LLM at all: a deterministic step machine (`LangGraphStepEngine`, a
   `langgraph.graph.StateGraph`) that validates each slot, executes
   `search_availability` / `book_court` itself the instant the workflow
@@ -134,11 +134,11 @@ src/tennis_booking/
                                `route` node whose conditional edges are
                                guarded by step_is_current, with tool-action
                                nodes that loop back to route)
-    agent.py                    FSMAgent(LangGraphStepEngine) -- adds
+    agent.py                    BookingWorkflowEngine(LangGraphStepEngine) -- adds
                                `book_tennis_court`'s typed `updates` array of
                                {slot, value} deltas (with server-side
                                per-slot validation) on top of that engine
-    __init__.py                  re-exports FSMAgent, LangGraphStepEngine so
+    __init__.py                  re-exports BookingWorkflowEngine, LangGraphStepEngine so
                                `from tennis_booking.workflow_engine import X`
                                works regardless of which file X lives in
   scoring.py                deterministic pass/fail scoring from tool-call args
@@ -153,14 +153,14 @@ src/tennis_booking/
                                state kept in a ConversationStore
     workflow_agent.py         numbered-steps-in-one-prompt agent
     simple_workflow_api_agent.py    agent-1 (book_tennis_court, {slot, value}
-                               deltas) + FSMAgent (LangGraphStepEngine)
+                               deltas) + BookingWorkflowEngine (LangGraphStepEngine)
     agent_registry.py         AGENTS_UNDER_TEST -- the single list the CLI
                                and every eval iterate over
 
 tests/                  fast, deterministic, no credentials needed -- always
                          safe to run, never talks to the real API
   test_workflow_steps.py     pure unit tests of the step machine + get_next_step
-  test_step_engine.py         pure unit tests of FSMAgent's step machine (every
+  test_step_engine.py         pure unit tests of BookingWorkflowEngine's step machine (every
                                slot validator, correction/staleness/forward-fill
                                behavior, multi-slot updates) -- the most
                                heavily tested module in the project, since
@@ -199,7 +199,6 @@ evals/                  live-API agent reliability evals -- every test here
   pricing.py                    per-model $/1M-token price table (point-in-time
                                snapshot -- see its own docstring on staleness)
   test_scripted_booking.py    STANDARD_SUITE x AGENTS_UNDER_TEST
-  test_simulated_conversations.py  LLM-simulated-user personas x AGENTS_UNDER_TEST
   scenarios/
     scripted.py                ScriptedScenario definitions (in-order + messy;
                                 11 scenarios as of this writing, including
@@ -210,13 +209,6 @@ evals/                  live-API agent reliability evals -- every test here
                                 naming a specific court instead of an area,
                                 and an out-of-range duration)
     runner.py
-  simulated/
-    personas.py                 LLM-simulated-user personas + goldens --
-                                 orderly, messy/self-correcting, terse,
-                                 over-explaining, and off-topic-detouring
-    callback_adapter.py         bridges ConversationAgent -> deepeval's model_callback
-    openrouter_model.py          deepeval judge model that authenticates the
-                                 same way the agents do (see Auth below)
 ```
 
 ## Setup
@@ -225,11 +217,10 @@ evals/                  live-API agent reliability evals -- every test here
 uv sync --group dev
 ```
 
-**Auth**: every agent, plus the eval judge/simulator, authenticates via a
-zero-arg OpenAI-SDK client pointed at [OpenRouter](https://openrouter.ai)
-(`agents/base.py:new_client()`), talking to DeepSeek
-(`deepseek/deepseek-v4-flash-20260731` by default). Get a key from
-[openrouter.ai/keys](https://openrouter.ai/keys):
+**Auth**: every agent authenticates via a zero-arg OpenAI-SDK client pointed
+at [OpenRouter](https://openrouter.ai) (`agents/base.py:new_client()`),
+talking to DeepSeek (`deepseek/deepseek-v4-flash-20260731` by default). Get
+a key from [openrouter.ai/keys](https://openrouter.ai/keys):
 
 ```bash
 echo "OPENROUTER_API_KEY=sk-or-..." > .env
@@ -237,9 +228,9 @@ echo "OPENROUTER_API_KEY=sk-or-..." > .env
 
 `.env` is gitignored and auto-loaded (`agents/base.py` calls
 `load_dotenv()`), so this is a one-time setup step. Override the model for
-every agent by editing `DEFAULT_MODEL` in `agents/base.py`, or just the eval
-judge/simulator via the `TENNIS_BOOKING_JUDGE_MODEL` env var (any model slug
-OpenRouter serves).
+every agent via the `TENNIS_BOOKING_MODEL` env var, or by editing
+`DEFAULT_MODEL` in `agents/base.py` directly (any model slug OpenRouter
+serves).
 
 ## Try it yourself first: the CLI chat harness
 
@@ -249,14 +240,14 @@ terminal:
 ```bash
 uv run tennis-chat --agent prompt_chain              # get_next_step, minimal payload
 uv run tennis-chat --agent workflow --quiet          # numbered steps, one static prompt
-uv run tennis-chat --agent simple_workflow_api       # one tool, book_tennis_court, + FSMAgent backend
+uv run tennis-chat --agent simple_workflow_api       # one tool, book_tennis_court, + BookingWorkflowEngine backend
 ```
 
 Type messages, watch which tool gets called each turn, and see a full
 call-log summary when you exit (`exit` or Ctrl-D). For `simple_workflow_api`
 you'll only ever see one tool name (`book_tennis_court`) in the trace —
 `search_availability` / `book_court` still show up in the log too, but as
-calls `FSMAgent` made on its own, folded in alongside it for consistency
+calls `BookingWorkflowEngine` made on its own, folded in alongside it for consistency
 with the other two agents.
 
 ## Running the tests
@@ -287,9 +278,6 @@ One eval file at a time, or scoped to one agent:
 ```bash
 uv run pytest evals/test_scripted_booking.py -v
 uv run pytest evals/test_scripted_booking.py -k simple_workflow_api -v
-uv run pytest evals/test_simulated_conversations.py -v -s
-# or via the deepeval CLI for its nicer reporting:
-uv run deepeval test run evals/test_simulated_conversations.py
 ```
 
 Repeat each case to get a real reliability signal instead of one noisy run
@@ -297,7 +285,6 @@ Repeat each case to get a real reliability signal instead of one noisy run
 
 ```bash
 uv run pytest evals/test_scripted_booking.py --count=5 -v
-uv run pytest evals/test_simulated_conversations.py -k prompt_chain --count=5 -v
 ```
 
 Everything at once:
@@ -324,9 +311,15 @@ standalone `tennis-compare` entry point, which runs the same named
 ```bash
 uv run tennis-compare                                   # every registered agent
 uv run tennis-compare --agent workflow --agent prompt_chain
-uv run tennis-compare --format json --out report.json
-uv run tennis-compare --format markdown --out docs/latest-comparison.md
+uv run tennis-compare --format json --out gpt-4o-mini.json
+uv run tennis-compare --format markdown --out latest-comparison.md
 ```
+
+Every report is written under `results/` at the repo root (created
+automatically) as well as printed -- `--out` is a filename (or path relative
+to `results/`), not an independent path, so eval output always lands in one
+enforced place instead of scattered wherever you happened to point it.
+Omit `--out` for a timestamped filename.
 
 Also requires `OPENROUTER_API_KEY` (same as the pytest evals above) -- it
 makes real, live model calls.
@@ -343,20 +336,11 @@ makes real, live model calls.
   results, we don't hardcode an expected id — we instead verify the booked
   court's area/surface/indoor-outdoor are consistent with what the user
   asked for. For `simple_workflow_api`, these two calls happen *inside*
-  `FSMAgent` rather than as literal tool calls from agent-1 — the adapter
+  `BookingWorkflowEngine` rather than as literal tool calls from agent-1 — the adapter
   (`simple_workflow_api_agent.py`) folds them into the same `tool_call_log` shape
   every other agent produces, so this scoring code runs completely
   unmodified across all three architectures.
-- **Simulated eval** (`evals/test_simulated_conversations.py`): a custom
-  `ConversationalGEval` (did it ask everything once and only once — without
-  re-asking for something the user already volunteered — in a sensible
-  order, use real tool results, and book with corrected values). Deliberately
-  *not* using deepeval's built-in `ConversationCompletenessMetric` — verified
-  live that it penalizes the agent for correctly declining a messy persona's
-  out-of-scope tangents (cancellation policy, "do you support pickleball") as
-  "unmet user intentions," which is the wrong standard for a narrowly-scoped
-  booking assistant.
-- **Fairness**: both evals are a single parametrized test function over
+- **Fairness**: the eval is a single parametrized test function over
   `AGENTS_UNDER_TEST` (`agents/agent_registry.py`) — the scenario data, the
   scoring/criteria, and the assertions are one copy shared by every agent,
   with no per-architecture branch inside the eval body. That includes the
@@ -392,6 +376,14 @@ settled.
 > specific reliability numbers and token counts are provider-specific and
 > have not been re-measured under DeepSeek -- treat this whole section as a
 > pre-migration snapshot until it's refreshed.
+>
+> **Simulated-eval retirement note**: the LLM-simulated-user eval
+> (`evals/test_simulated_conversations.py`) referenced in the findings below
+> has since been removed in favor of the scripted suite alone — it never fed
+> the report's pass/fail column (only token/cost/latency), and mixed its
+> usage samples into the scripted suite's numbers whenever both ran in the
+> same session. The findings are kept below as a historical record of real,
+> verified-live failure modes it caught.
 
 **Reliability (workflow / prompt-chain, n≈3-6 per cell, Haiku-tier agents
 and judge, measured pre-migration under Claude):**
@@ -509,7 +501,7 @@ predecessor, measured on the identical scripted scenario, pre-migration):**
     fall through to "any court with this open time," silently picking the
     wrong one whenever two courts shared a slot -- fixed by also matching
     on surface (`court_hint` in the current schema; see
-    `FSMAgent._resolve_selected_time`).
+    `BookingWorkflowEngine._resolve_selected_time`).
 
 ## Extending
 
@@ -527,5 +519,3 @@ predecessor, measured on the identical scripted scenario, pre-migration):**
   list[UsageRecord]`, `turn_count`, `model`.
 - **Add a scripted scenario**: add a `ScriptedScenario` to
   `evals/scenarios/scripted.py`'s `ALL_SCENARIOS`.
-- **Add a simulated persona/scenario**: add a `ConversationalGolden` to
-  `evals/simulated/personas.py`'s `ALL_GOLDENS`.

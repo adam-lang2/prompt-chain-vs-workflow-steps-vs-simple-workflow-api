@@ -1,6 +1,6 @@
 """Domain logic shared by every non-LLM step-computation engine in this
 package -- currently just `LangGraphStepEngine` (`step_engine_langgraph.py`)
-and its subclass `FSMAgent` (`agent.py`), but kept as free functions rather
+and its subclass `BookingWorkflowEngine` (`agent.py`), but kept as free functions rather
 than methods so a future step-computation engine could reuse the same
 domain logic without inheriting from either.
 

@@ -1,5 +1,5 @@
 """`book_tennis_court` -- agent-1's only tool in `agents/simple_workflow_api_agent.py`,
-backed by `workflow_engine.FSMAgent` (`LangGraphStepEngine`, see that
+backed by `workflow_engine.BookingWorkflowEngine` (`LangGraphStepEngine`, see that
 module's docstring for how it computes the current step). Takes a single
 `updates` array of `{slot, value}` deltas -- any combination, in one call:
 a correction to something answered earlier, the current node's answer, one

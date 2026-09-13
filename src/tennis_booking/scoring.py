@@ -1,6 +1,5 @@
 """Deterministic scoring of a finished conversation against a scenario's
-expected booking. Used by the scripted pytest suite, and importable by the
-deepeval suite for a fast pre-check before spending an LLM-judge call.
+expected booking. Used by the scripted pytest suite.
 
 This does NOT use an LLM judge -- it only looks at the tool calls the agent
 actually made (search_availability / book_court args), since those are the

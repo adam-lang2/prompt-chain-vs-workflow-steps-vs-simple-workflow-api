@@ -42,7 +42,7 @@ AGENTS_UNDER_TEST: tuple[AgentUnderTest, ...] = (
         id="simple_workflow_api",
         label=(
             "Simple-workflow-api (agent-1 with one tool, book_tennis_court, taking a structured "
-            "`updates` array of {slot, value} deltas, backed by FSMAgent -- a "
+            "`updates` array of {slot, value} deltas, backed by BookingWorkflowEngine -- a "
             "langgraph.graph.StateGraph step machine, LangGraphStepEngine)"
         ),
         create=create_simple_workflow_api_agent,

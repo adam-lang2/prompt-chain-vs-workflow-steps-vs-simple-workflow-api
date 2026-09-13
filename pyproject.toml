@@ -19,7 +19,6 @@ tennis-compare = "evals.compare:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "deepeval>=1.0",
 ]
 
 [tool.pytest.ini_options]

@@ -42,25 +42,26 @@ def test_scripted_booking(agent: AgentUnderTest, scenario: ScriptedScenario):
         expected=scenario.expected,
         num_turns=len(scenario.turns),
     )
-    record_result(agent.id, scenario.name, score)
+    record_result(agent.id, conversation_agent.model, scenario.name, score)
 
     label = f"{agent.id}/{scenario.name}"
+    assert not conversation_agent.exceeded_iteration_limit_turns, (
+        f"[{label}] hit MAX_TOOL_ITERATIONS_PER_TURN on turn(s) "
+        f"{conversation_agent.exceeded_iteration_limit_turns}"
+    )
     assert score.searched, f"[{label}] agent never called search_availability"
     assert score.booked, f"[{label}] agent never called book_court"
     assert not score.mismatches, f"[{label}] mismatches: {score.mismatches}"
 
-    # TODO fix comment make succinct, remove revision cruft
-    # Generic across all three architectures (unlike the old per-agent
-    # extra_invariant mechanism): every tool the agent was given must have
-    # actually been called at least once -- e.g. this is what verifies the
-    # prompt_chain agent really used get_next_step rather than degenerating
-    # into a plain tool-calling loop that happens to still pass the scoring
-    # above. And no tool result may ever leak a "state" blob back onto the
-    # wire, which is the specific efficiency claim get_next_step makes.
+    # Every declared tool must be called at least once -- e.g. this is what
+    # catches the prompt_chain agent degenerating into a plain tool-calling
+    # loop that skips get_next_step but still passes the scoring above.
     called_tool_names = {r.name for r in conversation_agent.tool_call_log}
     declared_tool_names = {t["name"] for t in conversation_agent.tools}
     unused = declared_tool_names - called_tool_names
     assert not unused, f"[{label}] agent never called: {sorted(unused)}"
 
+    # No tool result may leak a "state" blob onto the wire -- the specific
+    # efficiency claim get_next_step makes.
     leaks = [r for r in conversation_agent.tool_call_log if "state" in r.result]
     assert not leaks, f"[{label}] a tool result leaked a 'state' payload on {len(leaks)} call(s)"
