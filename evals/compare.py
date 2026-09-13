@@ -13,7 +13,7 @@ syntax, and to get the report in JSON or Markdown instead of pytest's
 terminal output.
 
     uv run tennis-compare
-    uv run tennis-compare --agent workflow --agent prompt_chain
+    uv run tennis-compare --agent workflow_steps --agent prompt_chain
     uv run tennis-compare --model openai/gpt-4o-mini --model openai/gpt-5.6-luna
     uv run tennis-compare --model deepseek/deepseek-v4-flash-20260731 --model openai/gpt-5.6-luna:none
     uv run tennis-compare --format json --out models.json
@@ -130,7 +130,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         dest="agent_ids",
         metavar="AGENT_ID",
         help=(
-            "Agent id to include (repeatable), e.g. --agent workflow. "
+            "Agent id to include (repeatable), e.g. --agent workflow_steps. "
             "Defaults to every entry in AGENTS_UNDER_TEST. "
             f"Valid ids: {', '.join(a.id for a in AGENTS_UNDER_TEST)}."
         ),

@@ -239,7 +239,7 @@ terminal:
 
 ```bash
 uv run tennis-chat --agent prompt_chain              # get_next_step, minimal payload
-uv run tennis-chat --agent workflow --quiet          # numbered steps, one static prompt
+uv run tennis-chat --agent workflow_steps --quiet    # numbered steps, one static prompt
 uv run tennis-chat --agent simple_workflow_api       # one tool, book_tennis_court, + BookingWorkflowEngine backend
 ```
 
@@ -310,7 +310,7 @@ standalone `tennis-compare` entry point, which runs the same named
 
 ```bash
 uv run tennis-compare                                   # every registered agent
-uv run tennis-compare --agent workflow --agent prompt_chain
+uv run tennis-compare --agent workflow_steps --agent prompt_chain
 uv run tennis-compare --format json --out gpt-4o-mini.json
 uv run tennis-compare --format markdown --out latest-comparison.md
 ```

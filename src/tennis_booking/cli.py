@@ -2,7 +2,7 @@
 eyeballing behavior before trusting the automated evals.
 
     uv run tennis-chat --agent prompt_chain
-    uv run tennis-chat --agent workflow --quiet
+    uv run tennis-chat --agent workflow_steps --quiet
 """
 from __future__ import annotations
 

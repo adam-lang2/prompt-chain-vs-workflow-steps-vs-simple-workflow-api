@@ -48,6 +48,24 @@ def _last_call(log: list[ToolCallRecord], name: str) -> ToolCallRecord | None:
     return None
 
 
+def _field_matches(field_name: str, actual, expected) -> bool:
+    """`area` is free text the agent is expected to paraphrase from however
+    the user phrased their location ("somewhere near Golden Gate Park" ->
+    area="near Golden Gate Park" is a faithful capture of the user's request,
+    not a mistake) -- across every architecture, since they all forward the
+    same user turns through the same search_availability tool. Scoring it
+    with exact string equality would fail a correct agent for wording it
+    didn't control; a substring match either way is the same leniency
+    `_validate_booked_court_consistency` already uses for the booked court's
+    area, for the same reason. Every other field (date, surface,
+    indoor_outdoor, ...) is a fixed value the agent chooses from a schema
+    enum or user-stated exact value, so those stay exact-match."""
+    if field_name == "area":
+        actual_s, expected_s = str(actual).lower(), str(expected).lower()
+        return actual_s in expected_s or expected_s in actual_s
+    return str(actual).lower() == str(expected).lower()
+
+
 def score_conversation(
     tool_call_log: list[ToolCallRecord],
     expected: dict,
@@ -73,7 +91,7 @@ def score_conversation(
             mismatches.append(f"search_availability was never called (expected {f}={expected[f]!r})")
             continue
         actual = last_search.args.get(f)
-        if str(actual).lower() != str(expected[f]).lower():
+        if not _field_matches(f, actual, expected[f]):
             mismatches.append(f"search_availability.{f} = {actual!r}, expected {expected[f]!r}")
 
     for f in EXPECTED_BOOK_FIELDS:

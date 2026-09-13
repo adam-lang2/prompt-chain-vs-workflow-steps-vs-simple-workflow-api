@@ -34,8 +34,8 @@ AGENTS_UNDER_TEST: tuple[AgentUnderTest, ...] = (
         create=create_prompt_chain_agent,
     ),
     AgentUnderTest(
-        id="workflow",
-        label="Workflow (numbered steps baked into one static system prompt)",
+        id="workflow_steps",
+        label="Workflow-steps (numbered steps baked into one static system prompt)",
         create=create_workflow_agent,
     ),
     AgentUnderTest(
