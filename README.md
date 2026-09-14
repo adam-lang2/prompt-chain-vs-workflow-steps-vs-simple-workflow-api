@@ -1,9 +1,21 @@
 # prompt-chain-vs-workflow-steps-vs-simple-workflow-api
 
-Reliability comparison of three ways to implement the same multi-turn agent
-workflow:
+An experiment comparing the **operational metrics** — cost, latency, and
+reliability — of three structurally different ways to implement the exact
+same multi-turn agent workflow (booking a tennis court through a
+conversational back-and-forth). Rather than debate which pattern *should*
+be better in the abstract, this project implements all three against one
+shared workflow definition, drives them through the same scripted
+conversations, and scores them with the same deterministic criteria — so
+any difference the numbers show comes from the architecture itself, not
+from a test drifting between copy-pasted versions or one agent getting
+better-written prompts than another. See `evals/compare.py`'s
+`tennis-compare` CLI and the [results below](#what-the-comparison-currently-shows)
+for how to reproduce and interpret a run.
 
-- **Workflow agent** (`src/tennis_booking/agents/workflow_agent.py`) — the
+The three architectures under comparison:
+
+- **Workflow-steps agent** (`src/tennis_booking/agents/workflow_agent.py`) — the
   workflow is a numbered list of steps baked into one static system prompt,
   used unchanged for the whole conversation. The model has no state tool
   and must re-read the whole transcript every turn to figure out which
@@ -41,22 +53,15 @@ copy-pasted versions.
 
 ## Goals
 
-1. Compare different agent implementations, to optimise for low cost, low
-   latency, high reliability, cheap llm model performance.
-2. Better capture the "workflow" abstraction into a solid code component.
-3. Better utilise the model's trained knowledge, to minimise cost and
-   improve reliability.
-4. Better define abstractions and roles for the agent, to improve
-   reliability by making it responsible for the things it's good at, e.g.
-   conversational experience, and elicitation.
-5. Support highly natural conversations, where callers might answer two
+1. Compare cost, latency, and reliability across implementations, to find
+   which architecture performs best with a cheap, low-reasoning LLM.
+2. Define clear abstractions and roles for the agent, so it's responsible
+   for the things a model is actually good at (conversational tone,
+   elicitation) while deterministic code owns workflow state and validation.
+3. Support highly natural conversations, where callers might answer two
    questions at once, ask questions themselves, skip ahead, or skip back
    to earlier steps too.
-6. Better conceptual representation of components and roles in code.
-7. Effective use of AI tool calling techniques.
-8. Fix the issues with the simple workflow steps agent forgetting where
-   it's up to, due to its lack of support for having a "current step"
-   pointer.
+4. Make effective, idiomatic use of AI tool-calling for each pattern.
 
 ## The workflow (tennis court booking)
 
@@ -90,19 +95,37 @@ agent's prompt:
 - **Grounding**: never state or book a court name, time, or price that isn't
   literally present in the most recent `search_availability` result.
 
-Court/availability data is mocked (`src/tennis_booking/mock_courts.py`) —
-no network calls, and availability is a deterministic hash of
-`(court_id, date)` so scripted scenarios are reproducible.
+Court data comes from one of three places depending on context:
+
+- **Live** (`tools/live_courts.py`) — the default for `tennis-chat` and any
+  direct use of `search_availability`: a real Nominatim geocode of whatever
+  free-text area the user gives, followed by a real Overpass API query for
+  actual tennis courts/sports centres nearby. This is what makes `area`
+  genuinely free text rather than a fixed enum.
+- **Recorded cassette** (`evals/fixtures/live_courts_cassette.py`) — every
+  pytest eval and `tennis-compare` run replays one fixed, real recording per
+  named area instead of hitting the network, since a scripted scenario's
+  literal expected values would break if live data drifted underneath it.
+- **`mock_courts.py`** — a small fully-synthetic 9-court/4-area directory,
+  used only by the offline unit/wiring tests in `tests/`, which need zero
+  network dependency at all.
+
+Per-slot open/closed availability has no live-data equivalent in any of the
+three, so it's always the same deterministic hash of `(court_id, date,
+time)` (`mock_courts.py`'s `_slot_is_open`), which is what keeps scripted
+scenarios reproducible even against live court data.
 
 ## Project layout
 
 ```
 src/tennis_booking/
-  models.py               BookingState + related dataclasses. search_has_run
-                            distinguishes "never searched" from "searched,
-                            zero results" -- shared by every architecture
-  mock_courts.py           mock court directory, deterministic availability,
-                            KNOWN_AREAS
+  models.py               domain dataclasses/enums (CourtAvailability, TimeSlot,
+                            Surface, IndoorOutdoor, ...) shared by every
+                            architecture -- see workflow_engine/state.py for
+                            BookingState itself
+  mock_courts.py           small synthetic court directory + the deterministic
+                            (court_id, date, time) availability hash every
+                            court-data source (live, cassette, or mock) uses
   workflow_steps.py        single source of truth for the 15-step workflow,
                             plus the shared staleness/grounding guidance text
   tools/                    one tool (schema + implementation) per module --
@@ -112,7 +135,12 @@ src/tennis_booking/
                              import X` is unchanged regardless of which file X
                              actually lives in
     search_availability.py    SEARCH_AVAILABILITY_TOOL, run_search_availability
+    live_courts.py             real Nominatim geocode + Overpass court lookup
+                               backing search_availability by default (see
+                               "Court data" above for when this is swapped out)
     book_court.py             BOOK_COURT_TOOL, run_book_court
+    send_confirmation.py      SEND_CONFIRMATION_TOOL, run_send_confirmation --
+                               mocks sending the booking-confirmation email
     prompt_chain_get_next_step.py
                                GET_NEXT_STEP_TOOL, NextStepTool, ConversationStore --
                                used by the prompt-chain agent
@@ -121,6 +149,10 @@ src/tennis_booking/
   workflow_engine/            package holding the non-LLM, non-native-tool-calling
                              "turn typed fields into workflow progress"
                              engine that backs simple-workflow-api:
+    state.py                    BookingState -- the durable, server-side
+                               workflow-progress state shared by every
+                               step-computation path in this package AND by
+                               workflow_steps.next_step_for (prompt-chain)
     step_engine_shared.py            domain logic every step-computation engine
                                needs: field dependents (which corrections
                                cascade into a re-search vs. just a reset
@@ -168,6 +200,9 @@ tests/                  fast, deterministic, no credentials needed -- always
                                elsewhere
   test_agent_wiring.py       tool-loop smoke tests via a fake OpenAI-shaped
                              client, covering every agent
+  test_scoring.py             unit tests for score_conversation's field-matching
+                               rules (area's substring leniency vs. every other
+                               field's exact match)
   fakes.py                    minimal fake client used by test_agent_wiring.py
 
 evals/                  live-API agent reliability evals -- every test here
@@ -198,6 +233,13 @@ evals/                  live-API agent reliability evals -- every test here
   stats.py                     dependency-free percentile()/mean() helpers
   pricing.py                    per-model $/1M-token price table (point-in-time
                                snapshot -- see its own docstring on staleness)
+  fixtures/
+    live_courts_cassette.py       replays one fixed, real Nominatim/Overpass
+                               recording per named area instead of hitting
+                               the network -- every eval and tennis-compare
+                               run patches tools/live_courts.py to use this
+    live_courts/*.json          the recorded {lat, lon, elements} data itself,
+                               one file per named area
   test_scripted_booking.py    STANDARD_SUITE x AGENTS_UNDER_TEST
   scenarios/
     scripted.py                ScriptedScenario definitions (in-order + messy;
@@ -311,9 +353,18 @@ standalone `tennis-compare` entry point, which runs the same named
 ```bash
 uv run tennis-compare                                   # every registered agent
 uv run tennis-compare --agent workflow_steps --agent prompt_chain
-uv run tennis-compare --format json --out gpt-4o-mini.json
+uv run tennis-compare --model openai/gpt-5.6-luna:none  # reasoning effort off for this model
 uv run tennis-compare --format markdown --out latest-comparison.md
 ```
+
+`--model` is repeatable — every agent runs once per model given, and every
+(agent, model) pair lands as its own row in the same report, so comparing
+several models is one invocation, not several files stitched together by
+hand. Append `:EFFORT` to a model slug (e.g. `openai/gpt-5.6-luna:none`) to
+set that model's OpenRouter reasoning effort ("none", "low", "high", ...)
+for this run only — useful for comparing a model with and without reasoning
+in the same report, without a process-wide env var forcing every model in
+the run to the same setting.
 
 Every report is written under `results/` at the repo root (created
 automatically) as well as printed -- `--out` is a filename (or path relative
@@ -332,10 +383,17 @@ makes real, live model calls.
   not the chat text — and compare them against the scenario's expected
   final values. This is what actually catches "reverted to a stale answer"
   or "skipped a required question" bugs regardless of how any agent phrases
-  its questions. Because the agent picks a `court_id` from live mock
-  results, we don't hardcode an expected id — we instead verify the booked
+  its questions. Because the agent picks a `court_id` from whatever
+  `search_availability` actually returned, we don't hardcode an expected id
+  — we instead verify the booked
   court's area/surface/indoor-outdoor are consistent with what the user
-  asked for. For `simple_workflow_api`, these two calls happen *inside*
+  asked for. `area` specifically is matched as a substring either way
+  (`"near Golden Gate Park"` vs. `"Golden Gate Park"` both pass), not exact
+  string equality, since it's free text the agent is expected to paraphrase
+  from however the user phrased their location — every other field (date,
+  surface, indoor/outdoor, ...) is a fixed value from a schema enum or the
+  user's exact wording, so those stay exact-match (`scoring.py`). For
+  `simple_workflow_api`, these two calls happen *inside*
   `BookingWorkflowEngine` rather than as literal tool calls from agent-1 — the adapter
   (`simple_workflow_api_agent.py`) folds them into the same `tool_call_log` shape
   every other agent produces, so this scoring code runs completely
@@ -363,145 +421,53 @@ makes real, live model calls.
   identical raw API loop, this is directly comparable across all of them —
   no per-architecture caveat.
 
-### What repeated live runs have found so far
+### What the comparison currently shows
 
-Not a one-time result — re-run the commands above; findings here reflect a
-point-in-time sample and should be refreshed periodically, not treated as
-settled.
+Not a one-time result — re-run `tennis-compare` yourself; results are
+live-model-dependent and vary run to run (see the two full runs referenced
+below, which used identical code and settings but produced different exact
+numbers). Treat what follows as a description of *how* to read a run and
+the failure patterns to watch for, not settled numbers.
 
-> **Provider migration note**: every finding below was measured under
-> Claude (Anthropic), before the project switched to DeepSeek via
-> OpenRouter (see Setup). They document real, verified-live failure modes
-> and are kept as a record of what to watch for architecturally, but the
-> specific reliability numbers and token counts are provider-specific and
-> have not been re-measured under DeepSeek -- treat this whole section as a
-> pre-migration snapshot until it's refreshed.
->
-> **Simulated-eval retirement note**: the LLM-simulated-user eval
-> (`evals/test_simulated_conversations.py`) referenced in the findings below
-> has since been removed in favor of the scripted suite alone — it never fed
-> the report's pass/fail column (only token/cost/latency), and mixed its
-> usage samples into the scripted suite's numbers whenever both ran in the
-> same session. The findings are kept below as a historical record of real,
-> verified-live failure modes it caught.
+**Reliability**: across full 3-agent × 2-model runs (`deepseek-v4-flash`
+and `gpt-5.6-luna` with reasoning off) against the 11-scenario
+`STANDARD_SUITE`, `prompt_chain` and `simple_workflow_api` are consistently
+the more reliable architectures (typically 10-11/11 per cell), while
+`workflow_steps` is the weakest (typically 7-10/11). `workflow_steps`'
+failures cluster almost entirely around one pattern: **dense, multi-field
+messages** (an opener or reply that answers several steps at once, e.g.
+"...Discovery Park, any surface, indoor or outdoor is fine, 120 minutes, 4
+players..."). Because this architecture has no state tool — every turn it
+must re-derive "which of the 15 steps am I on" purely by re-reading the raw
+transcript against its static numbered-list prompt — it can correctly
+extract clearly-labeled fields (a name, an email) while silently dropping a
+qualifier buried mid-sentence (`surface="any"`, `indoor_outdoor="either"`).
+Once dropped, there's no external state to catch or correct it: the model
+just keeps marching through its numbered steps, treating each new user
+reply as answering whatever step it currently thinks it's on, and can get
+permanently stuck re-asking an already-answered question — `search_availability`
+and `book_court` then never get called at all. `prompt_chain` (server-side
+`BookingState`, tracked in code) and `simple_workflow_api` (a `LangGraph`
+step machine validating each `{slot, value}` update) don't share this
+failure mode, since neither relies on the model re-inferring state from
+prose alone.
 
-**Reliability (workflow / prompt-chain, n≈3-6 per cell, Haiku-tier agents
-and judge, measured pre-migration under Claude):**
+**Cost and call volume**: `prompt_chain` makes roughly 2× the tool/API
+calls per conversation of `workflow_steps` (an extra `get_next_step` round
+trip almost every turn), and since the underlying Chat Completions API is
+stateless, every one of those extra round-trips' messages gets resent in
+full on every later call in the same conversation — that compounding is the
+dominant cost driver, bigger than any single payload's size. `workflow_steps`
+trades a larger static system prompt for far fewer round trips and comes
+out cheapest in total on both models; `simple_workflow_api` sits in
+between. Reasoning-off (`:none`) on `gpt-5.6-luna` doesn't reliably improve
+either cost or latency relative to `deepseek-v4-flash` — it's consistently
+the more expensive, higher-latency model of the two in this comparison
+despite reasoning being disabled.
 
-- The scripted eval is a clean sweep across these architectures (18/18
-  across 3 reps x 3 scenarios on the original 3-scenario suite) — fixed,
-  well-formed, one-topic-per-turn input doesn't differentiate them.
-  Reliability gaps only showed up under the simulated eval's
-  LLM-improvised, multi-topic, self-correcting pressure — conversational
-  *messiness*, not length, is what a useful regression check here needs to
-  stress.
-- The two failure modes seen there were architecture-relevant, not
-  identical: the workflow agent once hallucinated and booked a time
-  slot never present in a real `search_availability` result (this motivated
-  the grounding guidance above); the prompt-chain agent once skipped
-  reciting the booking summary and called `book_court` directly under a busy
-  conversation (this motivated splitting the single "confirm, then book"
-  step into two atomic ones above).
-- The eval's own judge/criteria wording turned out to be as impactful as
-  anything in the agents' prompts: a same-tier (Haiku) judge, forced by the
-  subscription OAuth rate limit, once flagged an agent for "never asking" a
-  question whose answer the user had volunteered unprompted — correct
-  behavior, misread as a violation. Tightening the GEval criteria wording
-  fixed the whole failure category. Treat eval-criteria text with the same
-  scrutiny as the agents' own system prompts.
-
-**Token cost (prompt-chain's minimal payload vs. its full-state-echo
-predecessor, measured on the identical scripted scenario, pre-migration):**
-
-- Trimming `get_next_step()`'s wire payload down to just the next
-  instruction (no state echo) measurably worked: **~13% lower** total input
-  tokens and **~16% lower** average tokens/call than the full-echo version,
-  on an otherwise-identical conversation (same message count, same API call
-  count).
-- It did *not* close the gap with `workflow_agent`, and the reason is
-  structural: `prompt_chain` makes roughly 2× the API calls per
-  conversation (an extra `get_next_step` round-trip almost every turn), and
-  since the Messages API is stateless, every one of those extra
-  round-trips' `tool_use`/`tool_result` messages gets resent in full on
-  every later call in that conversation. That compounding is the dominant
-  cost driver — bigger than any single payload's size. `workflow_agent`
-  trades a bigger static prompt for far fewer round-trips and comes out
-  cheaper in total, even though its first-call fixed overhead is the larger
-  of the two (measured directly via `count_tokens`: `workflow_agent` 2,345
-  tokens vs. `prompt_chain` 1,806 tokens on a from-scratch first call).
-
-**Simple-workflow-api — architecture-specific findings:**
-
-- **This architecture originally ran agent-1 as a real Claude Code subprocess
-  via the Claude Agent SDK (`claude_agent_sdk`)**, since the "agent-to-agent"
-  framing suggested it. Live testing showed that harness carries substantial
-  fixed overhead (~80K+ tokens of `cache_read`/`cache_creation` per session)
-  even with every built-in tool disabled — and none of the SDK's actual
-  differentiating capabilities (built-in tools, permissions, subagents,
-  skills, sandboxing) were ever exercised, since `tools=[]` disables all of
-  them except the one custom `book_tennis_court` tool. Agent-1's job is
-  identical in shape to the raw tool-use loop every other agent in this
-  project already runs through, so it was rewritten onto the same shared
-  `ConversationAgent` loop (`agents/base.py`) instead. This removed the fixed
-  overhead entirely (measured live: avg ~3,700 input tokens/call, in line
-  with the other architectures) and made cost directly comparable on
-  raw token counts, with no more SDK-side caching caveat.
-- **A single design bug caused a total failure the first time this was
-  tested live**, and is worth naming precisely because it's the kind of
-  thing that's easy to get wrong in this pattern: the system prompt
-  originally told agent-1 to bootstrap with an *empty* `book_tennis_court`
-  payload "before saying anything," which caused it to discard the user's
-  actual opening message whenever that message already contained useful
-  information (e.g. "I'd like to book a court near downtown") — the
-  workflow never advanced past `ask_area`. Fixed by having agent-1 relay
-  the user's first message as the bootstrap payload whenever it contains
-  anything answerable, falling back to an empty payload only for a truly
-  content-free opener like a bare "hi."
-- **The one-field-per-call design (agent-2 "keeps track of the current
-  workflow step") originally had a real, structural failure mode on scripted
-  messy scenarios in an early free-text-payload version of this
-  architecture -- since fixed, in two directions, and superseded by the
-  current typed `updates` array (which has no free-text extraction step to
-  fail this way in the first place).** When a user bundled multiple answers
-  into one message (e.g. "eastside... 2 players"), the free-text handler
-  only ever extracted the field for whichever step was *currently* active.
-  Two distinct gaps followed from that:
-  - **Forward** — an answer for a step several turns *ahead* got silently
-    dropped, and (on a fixed script that never repeats itself, unlike an
-    adaptive user) the conversation could get stuck re-asking the same
-    question forever. Fixed in the system prompt: agent-1 tracks every
-    detail the user has given across the *whole* conversation (not just
-    their latest message) and proactively resubmits it once the relevant
-    step comes up, instead of waiting to be asked -- still true of the
-    current `updates`-array design, which is exactly what forward-filling a
-    not-yet-reached slot is for.
-  - **Backward** — a correction to a field from a step already *passed*
-    (e.g. "wait, let's do 2026-09-12 instead" arriving while duration is
-    being asked) was invisible to the active step's free-text extractor and
-    silently dropped, shipping the stale original value to
-    `search_availability` / `book_court`. Fixed with an explicit,
-    extensible dependency model, `FIELD_DEPENDENTS`
-    (`workflow_engine/step_engine_shared.py`): correcting a slot reuses
-    `BookingState.search_params_stale()`'s existing cascade for the six
-    search-input fields (no new invalidation code needed -- a re-search and
-    cleared selection fall out of the normal step machine automatically)
-    and resets `summary_confirmed` for every other field, with no other
-    re-asking. The current typed schema makes this simpler still: a
-    correction is just any slot named in `updates[]`, current or not --
-    there's no "which step is this free text answering" ambiguity left to
-    get wrong.
-  - Building and verifying the correction path surfaced two more real bugs
-    along the way, both fixed at the shared model level so every
-    architecture benefits: (1) `BookingState.availability_searched()` used
-    `bool(available_courts)` as a proxy for "has search run," so a genuine
-    zero-result search looked identical to "never searched" and the step
-    machine re-issued the same search forever -- fixed with an explicit
-    `search_has_run` flag. (2) selecting a time by court surface alone
-    (e.g. "the grass court") instead of the court's actual name used to
-    fall through to "any court with this open time," silently picking the
-    wrong one whenever two courts shared a slot -- fixed by also matching
-    on surface (`court_hint` in the current schema; see
-    `BookingWorkflowEngine._resolve_selected_time`).
+See `results/` for full per-run reports (columns: calls, avg input/output
+tokens, total cost, latency p50/p90, max tool calls/turn, turn latency
+p50/p90, pass rate, plus a per-scenario failure breakdown).
 
 ## Extending
 
