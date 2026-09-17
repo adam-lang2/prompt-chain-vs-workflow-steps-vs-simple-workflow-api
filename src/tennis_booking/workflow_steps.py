@@ -61,7 +61,13 @@ class Step:
     # STEPS can't silently change which slots are search inputs.
     is_search_input: bool = False
 
-# TODO - i can't see mention of the tools here!? The steps should tell the model which tool to call
+# The three tool-action steps (search_availability, call_book_court,
+# send_confirmation) name the tool to call in their own `instruction` text and
+# carry is_tool_action=True, so "which tool runs here" is part of the step
+# definition rather than something an agent has to infer. How that instruction
+# reaches the model differs per architecture: react/prompt_chain hand it to the
+# LLM, which calls the tool itself, while workflow_engine executes the action
+# server-side the moment the step is reached (step_engine_shared.execute_tool_action).
 STEPS: list[Step] = [
     Step(
         key="ask_area",

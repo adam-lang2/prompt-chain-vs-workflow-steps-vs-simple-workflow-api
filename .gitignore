@@ -12,6 +12,12 @@ wheels/
 # Env vars / secrets
 .env
 
+# Editor/IDE config
+.idea/
+
+# Working notes, blog drafts, image assets -- local only, never published
+docs/
+
 # Test/eval artifacts
 .pytest_cache/
 .deepeval-cache.json
