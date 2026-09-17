@@ -223,7 +223,7 @@ def _node_error(step: Step, message: str) -> dict:
 
 
 class BookingWorkflowEngine(LangGraphStepEngine):
-    """Backend for `book_tennis_court`: reuses `LangGraphStepEngine`'s step
+    """Backend for `book_tennis_court_with_grammar`: reuses `LangGraphStepEngine`'s step
     computation, but `handle()` takes an already-validated
     `{"updates": [{"slot", "value"}, ...]}` dict instead of a free-text
     payload string.
@@ -250,7 +250,7 @@ class BookingWorkflowEngine(LangGraphStepEngine):
         )
 
     def handle(self, args: dict) -> dict:
-        """The single entry point `book_tennis_court`'s handler calls.
+        """The single entry point `book_tennis_court_with_grammar`'s handler calls.
         `args` is the tool call's already-validated arguments dict --
         `{}` (or `{"updates": []}`) on the bootstrap call, otherwise
         `{"updates": [{"slot": ..., "value": ...}, ...]}` covering any mix

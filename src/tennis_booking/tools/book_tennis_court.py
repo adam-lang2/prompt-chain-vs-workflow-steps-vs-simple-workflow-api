@@ -1,4 +1,5 @@
-"""`book_tennis_court` -- agent-1's only tool in `agents/simple_workflow_api_agent.py`,
+"""`book_tennis_court_with_grammar` -- agent-1's only tool in
+`agents/simple_workflow_api_agent.py`,
 backed by `workflow_engine.BookingWorkflowEngine` (`LangGraphStepEngine`, see that
 module's docstring for how it computes the current step). Takes a single
 `updates` array of `{slot, value}` deltas -- any combination, in one call:
@@ -36,7 +37,7 @@ _ALL_SLOTS: tuple[str, ...] = (
 )
 
 BOOK_TENNIS_COURT_TOOL: dict[str, Any] = {
-    "name": "book_tennis_court",
+    "name": "book_tennis_court_with_grammar",
     "description": (
         "Report booking progress to the workflow engine and get back what to "
         "do next. `updates` is a list of {slot, value} deltas -- set only the "

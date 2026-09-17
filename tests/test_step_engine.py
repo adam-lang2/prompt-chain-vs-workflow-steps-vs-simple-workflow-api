@@ -1,6 +1,6 @@
 """Unit tests for `BookingWorkflowEngine` -- the non-LLM step machine behind
-`agents/simple_workflow_api_agent.py` (`book_tennis_court`'s `{"updates": [...]}`
-schema). Pure Python, no LLM calls, no API key needed.
+`agents/simple_workflow_api_agent.py` (`book_tennis_court_with_grammar`'s
+`{"updates": [...]}` schema). Pure Python, no LLM calls, no API key needed.
 
 This is the only place `LangGraphStepEngine`'s step computation
 (`step_engine_langgraph.py`) and the domain logic in `step_engine_shared.py`

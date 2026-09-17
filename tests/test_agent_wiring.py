@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from tennis_booking.agents.prompt_chain_agent import create_agent as create_prompt_chain_agent
 from tennis_booking.agents.simple_workflow_api_agent import create_agent as create_simple_workflow_api
-from tennis_booking.agents.workflow_agent import create_agent as create_workflow_agent
+from tennis_booking.agents.react_agent import create_agent as create_react_agent
 from tests.fakes import FakeOpenAIClient, FakeResponse, FakeToolCall
 
 
-def test_workflow_agent_executes_search_then_replies():
+def test_react_agent_executes_search_then_replies():
     fake_client = FakeOpenAIClient(
         scripted_responses=[
             FakeResponse(
@@ -31,7 +31,7 @@ def test_workflow_agent_executes_search_then_replies():
             FakeResponse(content="Here's what's open downtown."),
         ]
     )
-    agent = create_workflow_agent(client=fake_client)
+    agent = create_react_agent(client=fake_client)
 
     reply = agent.send_user_message("Book me a clay court downtown on 2026-09-05, outdoor.")
 
@@ -75,7 +75,7 @@ def test_prompt_chain_agent_calls_get_next_step_with_minimal_payload():
 
 
 def test_simple_workflow_api_uses_the_structured_schema():
-    # book_tennis_court takes an `updates` array of {slot, value} deltas --
+    # book_tennis_court_with_grammar takes an `updates` array of {slot, value} deltas --
     # setting `area` directly as a slot should land on BookingWorkflowEngine's state and
     # advance to ask_date, same as any other single-slot update.
     fake_client = FakeOpenAIClient(
@@ -84,7 +84,7 @@ def test_simple_workflow_api_uses_the_structured_schema():
                 tool_calls=[
                     FakeToolCall(
                         id="tu_1",
-                        name="book_tennis_court",
+                        name="book_tennis_court_with_grammar",
                         input={"updates": [{"slot": "area", "value": "downtown"}]},
                     )
                 ]
@@ -98,7 +98,7 @@ def test_simple_workflow_api_uses_the_structured_schema():
 
     assert reply == "What date works for you?"
     assert len(agent.tool_call_log) == 1
-    assert agent.tool_call_log[0].name == "book_tennis_court"
+    assert agent.tool_call_log[0].name == "book_tennis_court_with_grammar"
     assert agent.tool_call_log[0].result["current_node"] == "ask_date"
     assert agent.state.area == "downtown"
 
@@ -110,7 +110,7 @@ def test_simple_workflow_api_accepts_multiple_slots_in_one_call():
                 tool_calls=[
                     FakeToolCall(
                         id="tu_1",
-                        name="book_tennis_court",
+                        name="book_tennis_court_with_grammar",
                         input={
                             "updates": [
                                 {"slot": "area", "value": "downtown"},
@@ -136,7 +136,7 @@ def test_simple_workflow_api_accepts_multiple_slots_in_one_call():
 def test_simple_workflow_api_folds_internal_tool_calls_into_the_log():
     # Updates that complete the whole workflow up to search_availability
     # make BookingWorkflowEngine execute search_availability itself, as a side effect of
-    # one book_tennis_court call -- that internal call must show up in the
+    # one book_tennis_court_with_grammar call -- that internal call must show up in the
     # agent's own tool_call_log too, not just BookingWorkflowEngine's private list.
     fake_client = FakeOpenAIClient(
         scripted_responses=[
@@ -144,7 +144,7 @@ def test_simple_workflow_api_folds_internal_tool_calls_into_the_log():
                 tool_calls=[
                     FakeToolCall(
                         id="tu_1",
-                        name="book_tennis_court",
+                        name="book_tennis_court_with_grammar",
                         input={"updates": [{"slot": "area", "value": "downtown"}]},
                     )
                 ]
@@ -162,7 +162,7 @@ def test_simple_workflow_api_folds_internal_tool_calls_into_the_log():
     agent.send_user_message("downtown")
 
     names = [r.name for r in agent.tool_call_log]
-    assert names == ["search_availability", "book_tennis_court"]
+    assert names == ["search_availability", "book_tennis_court_with_grammar"]
 
 
 def test_prompt_chain_agent_rejects_missing_conversation_id():

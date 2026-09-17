@@ -15,7 +15,7 @@ for how to reproduce and interpret a run.
 
 The three architectures under comparison:
 
-- **Workflow-steps agent** (`src/tennis_booking/agents/workflow_agent.py`) — the
+- **ReAct agent** (`src/tennis_booking/agents/react_agent.py`) — the
   workflow is a numbered list of steps baked into one static system prompt,
   used unchanged for the whole conversation. The model has no state tool
   and must re-read the whole transcript every turn to figure out which
@@ -33,7 +33,8 @@ The three architectures under comparison:
 - **Simple-workflow-api agent** (`src/tennis_booking/agents/simple_workflow_api_agent.py`)
   — a structurally different approach, but running through the same shared
   Messages-API tool-use loop (`agents/base.py`) as the others. Agent-1 has
-  exactly one tool, `book_tennis_court`, taking a single `updates` array of
+  exactly one tool, `book_tennis_court_with_grammar`, taking a single
+  `updates` array of
   `{slot, value}` deltas -- any combination, in one call: a correction to
   something answered earlier, the current node's answer, one or more
   not-yet-reached nodes the user already answered, or several of these at
@@ -90,7 +91,7 @@ agent's prompt:
   up, the old results are stale — search again before letting the user pick
   a time, even if they'd already picked one. `BookingState.search_params_stale()`
   enforces this deterministically wherever server-side state exists
-  (prompt-chain, simple-workflow-api); `workflow_agent.py` relies on
+  (prompt-chain, simple-workflow-api); `react_agent.py` relies on
   the same instruction text alone, since it has no state to check against.
 - **Grounding**: never state or book a court name, time, or price that isn't
   literally present in the most recent `search_availability` result.
@@ -167,7 +168,8 @@ src/tennis_booking/
                                guarded by step_is_current, with tool-action
                                nodes that loop back to route)
     agent.py                    BookingWorkflowEngine(LangGraphStepEngine) -- adds
-                               `book_tennis_court`'s typed `updates` array of
+                               `book_tennis_court_with_grammar`'s typed
+                               `updates` array of
                                {slot, value} deltas (with server-side
                                per-slot validation) on top of that engine
     __init__.py                  re-exports BookingWorkflowEngine, LangGraphStepEngine so
@@ -183,8 +185,9 @@ src/tennis_booking/
                              latency_ms, timed around the API call itself
     prompt_chain_agent.py     get_next_step() agent -- minimal wire payload,
                                state kept in a ConversationStore
-    workflow_agent.py         numbered-steps-in-one-prompt agent
-    simple_workflow_api_agent.py    agent-1 (book_tennis_court, {slot, value}
+    react_agent.py            numbered-steps-in-one-prompt (ReAct) agent
+    simple_workflow_api_agent.py    agent-1 (book_tennis_court_with_grammar,
+                               {slot, value}
                                deltas) + BookingWorkflowEngine (LangGraphStepEngine)
     agent_registry.py         AGENTS_UNDER_TEST -- the single list the CLI
                                and every eval iterate over
@@ -281,13 +284,13 @@ terminal:
 
 ```bash
 uv run tennis-chat --agent prompt_chain              # get_next_step, minimal payload
-uv run tennis-chat --agent workflow_steps --quiet    # numbered steps, one static prompt
-uv run tennis-chat --agent simple_workflow_api       # one tool, book_tennis_court, + BookingWorkflowEngine backend
+uv run tennis-chat --agent react --quiet             # ReAct: numbered steps, one static prompt
+uv run tennis-chat --agent simple_workflow_api       # one tool, book_tennis_court_with_grammar, + BookingWorkflowEngine backend
 ```
 
 Type messages, watch which tool gets called each turn, and see a full
 call-log summary when you exit (`exit` or Ctrl-D). For `simple_workflow_api`
-you'll only ever see one tool name (`book_tennis_court`) in the trace —
+you'll only ever see one tool name (`book_tennis_court_with_grammar`) in the trace —
 `search_availability` / `book_court` still show up in the log too, but as
 calls `BookingWorkflowEngine` made on its own, folded in alongside it for consistency
 with the other two agents.
@@ -352,7 +355,7 @@ standalone `tennis-compare` entry point, which runs the same named
 
 ```bash
 uv run tennis-compare                                   # every registered agent
-uv run tennis-compare --agent workflow_steps --agent prompt_chain
+uv run tennis-compare --agent react --agent prompt_chain
 uv run tennis-compare --model openai/gpt-5.6-luna:none  # reasoning effort off for this model
 uv run tennis-compare --format markdown --out latest-comparison.md
 ```
@@ -404,7 +407,7 @@ makes real, live model calls.
   with no per-architecture branch inside the eval body. That includes the
   mechanism check: `test_scripted_booking.py` asserts every tool an agent
   was given actually got called at least once (so `simple_workflow_api`
-  really used `book_tennis_court`, `prompt_chain` really used
+  really used `book_tennis_court_with_grammar`, `prompt_chain` really used
   `get_next_step`, rather than any agent silently degenerating into a
   plainer tool-calling loop that happens to still pass scoring) and that no
   tool result ever leaks a `"state"` payload — one generic check applied
@@ -433,7 +436,7 @@ the failure patterns to watch for, not settled numbers.
 and `gpt-5.6-luna` with reasoning off) against the 11-scenario
 `STANDARD_SUITE`, `prompt_chain` and `simple_workflow_api` are consistently
 the more reliable architectures (typically 10-11/11 per cell), while
-`workflow_steps` is the weakest (typically 7-10/11). `workflow_steps`'
+`react` is the weakest (typically 7-10/11). `react`'
 failures cluster almost entirely around one pattern: **dense, multi-field
 messages** (an opener or reply that answers several steps at once, e.g.
 "...Discovery Park, any surface, indoor or outdoor is fine, 120 minutes, 4
@@ -453,11 +456,11 @@ failure mode, since neither relies on the model re-inferring state from
 prose alone.
 
 **Cost and call volume**: `prompt_chain` makes roughly 2× the tool/API
-calls per conversation of `workflow_steps` (an extra `get_next_step` round
+calls per conversation of `react` (an extra `get_next_step` round
 trip almost every turn), and since the underlying Chat Completions API is
 stateless, every one of those extra round-trips' messages gets resent in
 full on every later call in the same conversation — that compounding is the
-dominant cost driver, bigger than any single payload's size. `workflow_steps`
+dominant cost driver, bigger than any single payload's size. `react`
 trades a larger static system prompt for far fewer round trips and comes
 out cheapest in total on both models; `simple_workflow_api` sits in
 between. Reasoning-off (`:none`) on `gpt-5.6-luna` doesn't reliably improve

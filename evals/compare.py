@@ -7,13 +7,13 @@ outside of pytest, and prints the standard comparison report
 
 pytest's existing parametrization (`test_scripted_booking.py`) already
 covers the automated-test use case; this script is what you actually reach
-for to run "just workflow vs. simple_workflow_api" interactively, or to
+for to run "just react vs. simple_workflow_api" interactively, or to
 compare several models in one shot, without pytest's node-id `-k`/`::`
 syntax, and to get the report in JSON or Markdown instead of pytest's
 terminal output.
 
     uv run tennis-compare
-    uv run tennis-compare --agent workflow_steps --agent prompt_chain
+    uv run tennis-compare --agent react --agent prompt_chain
     uv run tennis-compare --model openai/gpt-4o-mini --model openai/gpt-5.6-luna
     uv run tennis-compare --model deepseek/deepseek-v4-flash-20260731 --model openai/gpt-5.6-luna:none
     uv run tennis-compare --format json --out models.json
@@ -130,7 +130,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         dest="agent_ids",
         metavar="AGENT_ID",
         help=(
-            "Agent id to include (repeatable), e.g. --agent workflow_steps. "
+            "Agent id to include (repeatable), e.g. --agent react. "
             "Defaults to every entry in AGENTS_UNDER_TEST. "
             f"Valid ids: {', '.join(a.id for a in AGENTS_UNDER_TEST)}."
         ),

@@ -3,7 +3,7 @@ only describes the workflow at a high level, and instead of one static
 prompt used for the whole conversation, the model calls a `get_next_step()`
 tool every turn to get back a fresh instruction -- effectively a chain of
 small, dynamically generated prompts, one per step, rather than a single
-monolithic one (contrast `workflow_agent.py`, which bakes the entire numbered
+monolithic one (contrast `react_agent.py`, which bakes the entire numbered
 workflow into one static prompt).
 
 Progress is tracked deterministically in a server-side `BookingState`, kept

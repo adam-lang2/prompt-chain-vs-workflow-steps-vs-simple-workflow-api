@@ -2,7 +2,7 @@
 
 Every agent architecture implements the *same* workflow defined here:
 
-- The workflow agent (`agents/workflow_agent.py`) renders this list into a
+- The ReAct agent (`agents/react_agent.py`) renders this list into a
   numbered "Step 1 / Step 2 / ..." system prompt and relies entirely on the
   model re-reading the transcript each turn to figure out which step it's
   resuming from. One static prompt, no state tool.

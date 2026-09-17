@@ -63,7 +63,7 @@ class InternalToolCall:
     its own, internally, while auto-advancing past a tool-action step --
     agent-1 never calls these itself. Exposed so the calling agent module
     (`agents/simple_workflow_api_agent.py`) can fold these into `tool_call_log`
-    alongside the `book_tennis_court` calls, keeping `scoring.py`'s shared
+    alongside the `book_tennis_court_with_grammar` calls, keeping `scoring.py`'s shared
     scoring logic working unmodified across every architecture.
     """
 

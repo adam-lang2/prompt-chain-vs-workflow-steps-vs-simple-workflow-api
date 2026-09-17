@@ -1,4 +1,4 @@
-"""The workflow agent: the workflow is encoded as a numbered list of
+"""The ReAct agent: the workflow is encoded as a numbered list of
 steps baked into one static system prompt, used unchanged for the whole
 conversation. The model has no state tool -- on every turn it must re-read
 the whole transcript and infer for itself which numbered step to resume from
@@ -30,6 +30,8 @@ told you (re-read the whole conversation so far before deciding what to ask \
 next -- the user may have answered multiple questions in one message, or \
 answered out of order, or changed their mind about an earlier answer; if \
 they changed their mind, use their latest answer).
+- When a single message answers several steps, record them all before \
+deciding what to ask next.
 - Ask about ONE step at a time. Keep questions short and conversational.
 - Only call search_availability once you have area, date, surface, duration, \
 player count, and indoor/outdoor preference.

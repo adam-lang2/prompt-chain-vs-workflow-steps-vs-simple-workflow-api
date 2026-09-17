@@ -2,7 +2,7 @@
 this project, talking to DeepSeek through OpenRouter.
 
 This is deliberately the *only* place that talks to the model API.
-`prompt_chain_agent.py`, `workflow_agent.py`, and `simple_workflow_api_agent.py`
+`prompt_chain_agent.py`, `react_agent.py`, and `simple_workflow_api_agent.py`
 are all thin configuration over this class -- same model, same
 message-handling loop, same transcript logging -- so any behavioral
 difference measured in the evals comes from the system prompt / tool-set

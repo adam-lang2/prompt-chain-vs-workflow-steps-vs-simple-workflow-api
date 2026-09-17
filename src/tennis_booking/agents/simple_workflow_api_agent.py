@@ -2,8 +2,8 @@
 knowledge of its own) talks to a deterministic workflow API instead of
 tracking the conversation itself: agent-2, `BookingWorkflowEngine` (`workflow_engine/`), is not
 an LLM at all, but a non-LLM step machine that owns the workflow. Agent-1's
-only tool, `book_tennis_court` (`BOOK_TENNIS_COURT_TOOL`, see
-tools/book_tennis_court.py), takes a single `updates` array of
+only tool, `book_tennis_court_with_grammar` (`BOOK_TENNIS_COURT_TOOL`,
+see tools/book_tennis_court.py), takes a single `updates` array of
 `{slot, value}` deltas -- any combination, in one call: a correction to
 something answered earlier, the current node's answer, one or more
 not-yet-reached nodes the user already answered, or several of these at
@@ -27,7 +27,7 @@ from tennis_booking.workflow_engine import BookingWorkflowEngine
 from tennis_booking.tools import BOOK_TENNIS_COURT_TOOL
 from tennis_booking.workflow_steps import GROUNDING_GUIDANCE, STALE_SEARCH_GUIDANCE
 
-BOOK_TOOL_NAME = "book_tennis_court"
+BOOK_TOOL_NAME = "book_tennis_court_with_grammar"
 
 SYSTEM_PROMPT = f"""\
 You are a tennis court booking assistant, talking directly to the user. \
@@ -67,7 +67,7 @@ def create_agent(state=None, client=None) -> ConversationAgent:
     BookingState when none is given."""
     fsm_agent = BookingWorkflowEngine(state)
 
-    def _book_tennis_court(args: dict) -> dict:
+    def _book_tennis_court_with_grammar(args: dict) -> dict:
         before = len(fsm_agent.internal_tool_calls)
         result = fsm_agent.handle(args)
 
@@ -80,7 +80,7 @@ def create_agent(state=None, client=None) -> ConversationAgent:
     agent = ConversationAgent(
         system_prompt=SYSTEM_PROMPT,
         tools=[BOOK_TENNIS_COURT_TOOL],
-        tool_executors={BOOK_TOOL_NAME: _book_tennis_court},
+        tool_executors={BOOK_TOOL_NAME: _book_tennis_court_with_grammar},
         client=client,
     )
     agent.state = fsm_agent.state  # type: ignore[attr-defined]  # convenience handle for tests

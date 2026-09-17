@@ -1,7 +1,7 @@
 """Registry of agent architectures under comparison.
 
 The CLI chat harness (`cli.py`) and every eval in `evals/` import this
-instead of importing `prompt_chain_agent` / `workflow_agent` /
+instead of importing `prompt_chain_agent` / `react_agent` /
 `simple_workflow_api` directly, so there is exactly one place that says
 which agents exist and how to build one. An eval parametrized over
 `AGENTS_UNDER_TEST` runs the identical test body against every entry --
@@ -17,7 +17,7 @@ from typing import Callable
 from tennis_booking.agents.base import ConversationAgent
 from tennis_booking.agents.prompt_chain_agent import create_agent as create_prompt_chain_agent
 from tennis_booking.agents.simple_workflow_api_agent import create_agent as create_simple_workflow_api_agent
-from tennis_booking.agents.workflow_agent import create_agent as create_workflow_agent
+from tennis_booking.agents.react_agent import create_agent as create_react_agent
 
 
 @dataclass(frozen=True)
@@ -34,14 +34,15 @@ AGENTS_UNDER_TEST: tuple[AgentUnderTest, ...] = (
         create=create_prompt_chain_agent,
     ),
     AgentUnderTest(
-        id="workflow_steps",
-        label="Workflow-steps (numbered steps baked into one static system prompt)",
-        create=create_workflow_agent,
+        id="react",
+        label="ReAct (numbered steps baked into one static system prompt)",
+        create=create_react_agent,
     ),
     AgentUnderTest(
         id="simple_workflow_api",
         label=(
-            "Simple-workflow-api (agent-1 with one tool, book_tennis_court, taking a structured "
+            "Simple-workflow-api (agent-1 with one tool, book_tennis_court_with_grammar, taking a "
+            "structured "
             "`updates` array of {slot, value} deltas, backed by BookingWorkflowEngine -- a "
             "langgraph.graph.StateGraph step machine, LangGraphStepEngine)"
         ),
