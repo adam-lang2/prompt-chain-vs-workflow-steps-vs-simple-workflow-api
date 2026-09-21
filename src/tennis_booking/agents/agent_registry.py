@@ -18,6 +18,7 @@ from tennis_booking.agents.base import ConversationAgent
 from tennis_booking.agents.prompt_chain_agent import create_agent as create_prompt_chain_agent
 from tennis_booking.agents.simple_workflow_api_agent import create_agent as create_simple_workflow_api_agent
 from tennis_booking.agents.react_agent import create_agent as create_react_agent
+from tennis_booking.agents.jev_agent import create_agent as create_jev_agent
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,11 @@ AGENTS_UNDER_TEST: tuple[AgentUnderTest, ...] = (
             "langgraph.graph.StateGraph step machine, LangGraphStepEngine)"
         ),
         create=create_simple_workflow_api_agent,
+    ),
+    AgentUnderTest(
+        id="jev",
+        label="Jev (TypeSafe's Jev model interprets user turns, deterministic code updates via BookingWorkflowEngine, LLM is speaker-only)",
+        create=create_jev_agent,
     ),
 )
 

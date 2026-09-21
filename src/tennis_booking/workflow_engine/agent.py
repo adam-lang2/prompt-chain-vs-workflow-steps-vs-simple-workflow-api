@@ -229,6 +229,15 @@ class BookingWorkflowEngine(LangGraphStepEngine):
     payload string.
     """
 
+    def peek(self) -> dict:
+        """Advance past any tool actions and return the current node's payload
+        without processing any updates. Returns `{"workflow_complete": True}`
+        if the workflow is finished."""
+        step = self._advance_past_tool_actions()
+        if step is None:
+            return {"workflow_complete": True}
+        return _node_payload(self.state, step)
+
     def _resolve_selected_time(self, selected_time: str, court_hint: str | None) -> tuple[bool, dict, str | None]:
         if not self.state.available_courts:
             return False, {}, "No availability has been searched yet -- this shouldn't happen; please retry."

@@ -22,10 +22,14 @@ PRICE_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
     "openai/gpt-5.6-luna": (0.20, 1.20),
 }
 
+# TypeSafe Jev: $0.042/MTok input, output is free.
+JEV_PRICE_PER_MILLION_TOKENS: tuple[float, float] = (0.042, 0.0)
 
-def cost_for_call(model: str, input_tokens: int, output_tokens: int) -> float | None:
-    """Estimated $ cost of one call, or None if `model` isn't priced here."""
-    prices = PRICE_PER_MILLION_TOKENS.get(model)
+
+def cost_for_call(model: str, input_tokens: int, output_tokens: int, source: str = "llm") -> float | None:
+    """Estimated $ cost of one call, or None if `model` isn't priced here.
+    `source="jev"` prices a TypeSafe Jev call at the flat Jev rate instead."""
+    prices = JEV_PRICE_PER_MILLION_TOKENS if source == "jev" else PRICE_PER_MILLION_TOKENS.get(model)
     if prices is None:
         return None
     input_price, output_price = prices

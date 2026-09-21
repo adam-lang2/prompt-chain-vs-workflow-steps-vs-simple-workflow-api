@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import pytest
 
+import os
+
 from tennis_booking.agents.base import has_usable_credentials
 from tennis_booking.tools import live_courts
 from evals.fixtures import live_courts_cassette
@@ -18,14 +20,25 @@ NO_CREDENTIALS_REASON = (
     "and put it in .env as OPENROUTER_API_KEY."
 )
 
+NO_TYPESAFE_REASON = (
+    "No TYPESAFE_API_KEY found. Get a key from https://typesafe.ai "
+    "and put it in .env as TYPESAFE_API_KEY."
+)
+
 
 def pytest_collection_modifyitems(config, items):
     if has_usable_credentials():
-        return
-    skip_marker = pytest.mark.skip(reason=NO_CREDENTIALS_REASON)
-    for item in items:
-        if "eval" in item.keywords:
-            item.add_marker(skip_marker)
+        # Skip jev tests if TYPESAFE_API_KEY is missing
+        if not os.environ.get("TYPESAFE_API_KEY"):
+            skip_marker = pytest.mark.skip(reason=NO_TYPESAFE_REASON)
+            for item in items:
+                if "jev" in item.name:
+                    item.add_marker(skip_marker)
+    else:
+        skip_marker = pytest.mark.skip(reason=NO_CREDENTIALS_REASON)
+        for item in items:
+            if "eval" in item.keywords:
+                item.add_marker(skip_marker)
 
 
 @pytest.fixture(autouse=True)

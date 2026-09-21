@@ -86,6 +86,10 @@ class ToolCallRecord:
     name: str
     args: dict
     result: dict
+    # False for functions the workflow engine runs itself (search, book,
+    # confirm) -- logged so scoring can inspect their args, but not a choice
+    # the model made, so excluded from "tool calls per turn".
+    agentic: bool = True
 
 
 @dataclass
@@ -117,6 +121,10 @@ class UsageRecord:
     output_tokens: int
     latency_ms: float = 0.0
     cost_usd: float | None = None
+    # "llm" for a chat-completions call, "jev" for a TypeSafe interpretation
+    # call -- reported separately since they're different models with
+    # different pricing (see evals/report.py).
+    source: str = "llm"
 
 
 # Deliberately hand-rolled rather than a LangChain AgentExecutor (or similar):
@@ -171,12 +179,12 @@ class ConversationAgent:
         need" (see MAX_TOOL_ITERATIONS_PER_TURN), reported per-agent in
         evals/report.py so it's visible whether an architecture is
         structurally closer to that cap than others."""
-        if not self.tool_call_log:
-            return 0
         counts: dict[int, int] = {}
         for record in self.tool_call_log:
+            if not record.agentic:
+                continue
             counts[record.turn] = counts.get(record.turn, 0) + 1
-        return max(counts.values())
+        return max(counts.values(), default=0)
 
     def send_user_message(self, text: str) -> str:
         """Append a user turn, run the tool-use loop, return the agent's reply text."""

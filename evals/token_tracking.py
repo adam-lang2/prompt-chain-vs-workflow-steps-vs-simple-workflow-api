@@ -34,6 +34,7 @@ class UsageSample:
     output_tokens: int
     latency_ms: float = 0.0
     cost_usd: float | None = None
+    source: str = "llm"  # "llm" or "jev" -- see UsageRecord.source
 
 
 @dataclass(frozen=True)
@@ -67,9 +68,10 @@ def record_usage(agent_id: str, agent: ConversationAgent, model: str | None = No
     models."""
     model = model if model is not None else agent.model
     for record in agent.usage_log:
+        source = getattr(record, "source", "llm")
         cost_usd = getattr(record, "cost_usd", None)
         if cost_usd is None:
-            cost_usd = cost_for_call(agent.model, record.input_tokens, record.output_tokens)
+            cost_usd = cost_for_call(agent.model, record.input_tokens, record.output_tokens, source)
         _SAMPLES.append(
             UsageSample(
                 agent_id=agent_id,
@@ -78,6 +80,7 @@ def record_usage(agent_id: str, agent: ConversationAgent, model: str | None = No
                 output_tokens=record.output_tokens,
                 latency_ms=getattr(record, "latency_ms", 0.0),
                 cost_usd=cost_usd,
+                source=source,
             )
         )
     _TURN_SAMPLES.append(

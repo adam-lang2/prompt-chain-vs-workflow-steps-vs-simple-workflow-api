@@ -73,7 +73,7 @@ def create_agent(state=None, client=None) -> ConversationAgent:
 
         for internal in fsm_agent.internal_tool_calls[before:]:
             agent.tool_call_log.append(
-                ToolCallRecord(turn=agent.turn_count, name=internal.name, args=internal.args, result=internal.result)
+                ToolCallRecord(turn=agent.turn_count, name=internal.name, args=internal.args, result=internal.result, agentic=False)
             )
         return result
 

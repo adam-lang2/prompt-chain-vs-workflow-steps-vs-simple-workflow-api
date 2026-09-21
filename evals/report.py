@@ -25,6 +25,10 @@ from evals import results_tracking, stats, token_tracking
 from tennis_booking.agents.agent_registry import AGENTS_BY_ID
 
 
+def _usd(value: float | None) -> str:
+    return f"${value:.4f}" if value is not None else "—"
+
+
 @dataclass
 class AgentReportRow:
     agent_id: str
@@ -45,6 +49,21 @@ class AgentReportRow:
     passed_scenarios: int
     total_scenarios: int
     failures: list[tuple[str, list[str]]] = field(default_factory=list)
+    # Jev (TypeSafe) interpretation calls, reported apart from the LLM's
+    # (num_calls / *_tokens above are LLM-only). Zero for agents without Jev.
+    jev_calls: int = 0
+    jev_input_tokens: int = 0
+    jev_output_tokens: int = 0
+    jev_latency_p50_ms: float = 0.0
+    jev_latency_p90_ms: float = 0.0
+    jev_total_latency_ms: float = 0.0
+    jev_cost_usd: float | None = None
+
+    @property
+    def combined_cost_usd(self) -> float | None:
+        if self.total_cost_usd is None and self.jev_cost_usd is None:
+            return None
+        return (self.total_cost_usd or 0.0) + (self.jev_cost_usd or 0.0)
 
     @property
     def pass_rate(self) -> float | None:
@@ -71,9 +90,13 @@ class ComparisonReport:
                 f"avg input={row.avg_input_tokens:,.0f} tok/call | "
                 f"avg output={row.avg_output_tokens:,.0f} tok/call | "
                 f"total input={row.total_input_tokens:,} | "
-                f"total cost={cost} | "
-                f"latency p50={row.latency_p50_ms:,.0f}ms p90={row.latency_p90_ms:,.0f}ms | "
-                f"total latency={row.total_latency_ms:,.0f}ms | "
+                f"total output={row.total_output_tokens:,} | "
+                f"jev calls={row.jev_calls} input={row.jev_input_tokens:,} output={row.jev_output_tokens:,} "
+                f"latency p50={row.jev_latency_p50_ms:,.0f}ms p90={row.jev_latency_p90_ms:,.0f}ms "
+                f"total={row.jev_total_latency_ms:,.0f}ms | "
+                f"LLM cost={cost} | jev cost={_usd(row.jev_cost_usd)} | total cost={_usd(row.combined_cost_usd)} | "
+                f"LLM latency p50={row.latency_p50_ms:,.0f}ms p90={row.latency_p90_ms:,.0f}ms "
+                f"total={row.total_latency_ms:,.0f}ms | "
                 f"max tool calls/turn={row.max_tool_calls_per_turn} | "
                 f"turn latency p50={row.turn_latency_p50_ms:,.0f}ms p90={row.turn_latency_p90_ms:,.0f}ms | "
                 f"scenarios passed={pass_rate}"
@@ -86,10 +109,12 @@ class ComparisonReport:
         if not self.rows:
             return "_No comparison data collected this run._"
         header = (
-            "| Agent | Model | Calls | Avg input tok | Avg output tok | Total cost | "
-            "Latency p50 | Latency p90 | Max tool calls/turn | Turn latency p50 | "
+            "| Agent | Model | LLM calls | LLM input tok | LLM output tok | "
+            "Jev calls | Jev input tok | Jev output tok | LLM cost | Jev cost | Total cost | "
+            "LLM latency p50 | LLM latency p90 | Jev latency p50 | Jev latency p90 | "
+            "Max tool calls/turn | Turn latency p50 | "
             "Turn latency p90 | Passed |\n"
-            "|---|---|---|---|---|---|---|---|---|---|---|---|"
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
         )
         lines = [header]
         for row in self.rows:
@@ -98,9 +123,14 @@ class ComparisonReport:
                 f"{row.passed_scenarios}/{row.total_scenarios}" if row.total_scenarios else "n/a"
             )
             lines.append(
-                f"| {row.agent_id} | {row.model} | {row.num_calls} | {row.avg_input_tokens:,.0f} | "
-                f"{row.avg_output_tokens:,.0f} | {cost} | {row.latency_p50_ms:,.0f}ms | "
-                f"{row.latency_p90_ms:,.0f}ms | {row.max_tool_calls_per_turn} | "
+                f"| {row.agent_id} | {row.model} | {row.num_calls} | {row.total_input_tokens:,} | "
+                f"{row.total_output_tokens:,} | {row.jev_calls or '—'} | "
+                f"{row.jev_input_tokens:,} | {row.jev_output_tokens:,} | "
+                f"{cost} | {_usd(row.jev_cost_usd) if row.jev_calls else '—'} | {_usd(row.combined_cost_usd)} | "
+                f"{row.latency_p50_ms:,.0f}ms | {row.latency_p90_ms:,.0f}ms | "
+                f"{f'{row.jev_latency_p50_ms:,.0f}ms' if row.jev_calls else '—'} | "
+                f"{f'{row.jev_latency_p90_ms:,.0f}ms' if row.jev_calls else '—'} | "
+                f"{row.max_tool_calls_per_turn} | "
                 f"{row.turn_latency_p50_ms:,.0f}ms | {row.turn_latency_p90_ms:,.0f}ms | {pass_rate} |"
             )
         if any(row.failures for row in self.rows):
@@ -124,6 +154,14 @@ class ComparisonReport:
                     "avg_output_tokens": row.avg_output_tokens,
                     "total_output_tokens": row.total_output_tokens,
                     "total_cost_usd": row.total_cost_usd,
+                    "jev_calls": row.jev_calls,
+                    "jev_input_tokens": row.jev_input_tokens,
+                    "jev_output_tokens": row.jev_output_tokens,
+                    "jev_latency_p50_ms": row.jev_latency_p50_ms,
+                    "jev_latency_p90_ms": row.jev_latency_p90_ms,
+                    "jev_total_latency_ms": row.jev_total_latency_ms,
+                    "jev_cost_usd": row.jev_cost_usd,
+                    "combined_cost_usd": row.combined_cost_usd,
                     "latency_p50_ms": row.latency_p50_ms,
                     "latency_p90_ms": row.latency_p90_ms,
                     "total_latency_ms": row.total_latency_ms,
@@ -172,7 +210,9 @@ def build_report(agent_ids: list[str] | None = None) -> ComparisonReport:
 
     rows: list[AgentReportRow] = []
     for agent_id, model in keys_to_report:
-        key_samples = by_key_samples.get((agent_id, model), [])
+        all_key_samples = by_key_samples.get((agent_id, model), [])
+        key_samples = [s for s in all_key_samples if s.source == "llm"]
+        jev_samples = [s for s in all_key_samples if s.source == "jev"]
         key_turn_samples = by_key_turn_samples.get((agent_id, model), [])
         key_results = by_key_results.get((agent_id, model), [])
         label = AGENTS_BY_ID[agent_id].label if agent_id in AGENTS_BY_ID else agent_id
@@ -230,6 +270,19 @@ def build_report(agent_ids: list[str] | None = None) -> ComparisonReport:
                 passed_scenarios=passed,
                 total_scenarios=len(key_results),
                 failures=failures,
+                jev_calls=len(jev_samples),
+                jev_input_tokens=sum(s.input_tokens for s in jev_samples),
+                jev_output_tokens=sum(s.output_tokens for s in jev_samples),
+                jev_cost_usd=(
+                    sum(s.cost_usd for s in jev_samples if s.cost_usd is not None) if jev_samples else None
+                ),
+                jev_latency_p90_ms=(
+                    stats.percentile([s.latency_ms for s in jev_samples], 90) if jev_samples else 0.0
+                ),
+                jev_total_latency_ms=sum(s.latency_ms for s in jev_samples),
+                jev_latency_p50_ms=(
+                    stats.percentile([s.latency_ms for s in jev_samples], 50) if jev_samples else 0.0
+                ),
             )
         )
 

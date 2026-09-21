@@ -53,7 +53,8 @@ def main() -> None:
 
         if not args.quiet:
             for record in agent.tool_call_log[calls_before:]:
-                print(f"  [tool] {record.name}({_short_json(record.args)}) -> {_short_json(record.result)}")
+                label = "tool" if record.agentic else "workflow"
+                print(f"  [{label}] {record.name}({_short_json(record.args)}) -> {_short_json(record.result)}")
 
         print(f"agent> {reply}\n")
 
@@ -68,8 +69,13 @@ def _short_json(value: dict, limit: int = 300) -> str:
 def _print_summary(agent: ConversationAgent) -> None:
     print("\n--- session summary ---")
     print(f"turns: {agent.turn_count}")
-    print(f"tool calls: {len(agent.tool_call_log)}")
-    for record in agent.tool_call_log:
+    agentic = [r for r in agent.tool_call_log if r.agentic]
+    workflow = [r for r in agent.tool_call_log if not r.agentic]
+    print(f"tool calls: {len(agentic)}")
+    for record in agentic:
+        print(f"  turn {record.turn}: {record.name}({_short_json(record.args)})")
+    print(f"workflow functions: {len(workflow)}")
+    for record in workflow:
         print(f"  turn {record.turn}: {record.name}({_short_json(record.args)})")
 
 
