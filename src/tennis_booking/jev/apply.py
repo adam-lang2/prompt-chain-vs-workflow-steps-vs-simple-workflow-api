@@ -42,7 +42,13 @@ def to_updates(
     # Process mentioned slots
     for slot_name, (value, confidence) in interp.slots.items():
         if confidence < threshold:
-            ambiguities_list.append(f"Low confidence for {slot_name} (confidence={confidence:.2f})")
+            # A shaky guess at a slot that is already set, on a turn that isn't
+            # a correction, is noise: the user didn't re-state it. Asking about
+            # it only makes the speaker second-guess settled answers.
+            already_set = getattr(state, slot_name, None) not in (None, "")
+            if already_set and interp.act != "corrects_earlier":
+                continue
+            ambiguities_list.append(f"Unclear what the user meant for {slot_name}")
             continue
 
         # Type coercion
@@ -60,6 +66,15 @@ def to_updates(
                 coerced_value = int(value)
 
         updates_list.append({"slot": slot_name, "value": coerced_value})
+
+    # A court hint only matters when several courts share the chosen time. If
+    # exactly one court has it, the time already picks the court, so an unsure
+    # hint is not worth asking the user about.
+    chosen_time = next((u["value"] for u in updates_list if u["slot"] == "selected_time"), None)
+    if chosen_time is not None:
+        matching = [c for c in state.available_courts if any(s.time == chosen_time for s in c.slots)]
+        if len(matching) == 1:
+            ambiguities_list = [a for a in ambiguities_list if "court_hint" not in a]
 
     # `confirmed` is only ever set by a confirming act at the confirm_booking node.
     if interp.act == "confirms":

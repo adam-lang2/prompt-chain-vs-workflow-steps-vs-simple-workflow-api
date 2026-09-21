@@ -8,12 +8,11 @@ import json
 import time
 from dataclasses import field
 
-from tennis_booking.agents.base import PROVIDER_ROUTING, ConversationAgent, ToolCallRecord, UsageRecord
+from tennis_booking.agents.base import PROVIDER_ROUTING, ConversationAgent, ToolCallRecord, UsageRecord, usage_details
 from tennis_booking.jev.apply import to_updates
 from tennis_booking.jev.interpret import Interpretation, Interpreter
 from tennis_booking.jev.interpreter import JevInterpreter
 from tennis_booking.workflow_engine import BookingWorkflowEngine
-from tennis_booking.workflow_steps import GROUNDING_GUIDANCE, STALE_SEARCH_GUIDANCE
 
 SYSTEM_PROMPT = f"""\
 You are a tennis court booking assistant. Your job is to:
@@ -25,13 +24,40 @@ available courts, booking summary, confirmation, etc.
 - Ask the next question, only from what the workflow engine says to ask.
 - Keep messages short and conversational.
 
-{STALE_SEARCH_GUIDANCE}
+Grounding:
+- The only court names, times and prices you may state are the ones in the \
+payload (`available_courts` or `booking_so_far`). Never state or imply a \
+time, court or price that is not there.
+- If the user asks for a time that is not in `available_courts`, say so \
+plainly and offer only the times that are.
+- You have no tools and never look anything up. The workflow engine re-runs \
+any search itself when a preference changes. If the payload shows a changed \
+preference, just acknowledge it and ask the payload's next question.
+- A booking is only real once the payload contains a confirmation_id.
 
-{GROUNDING_GUIDANCE}
-
-Important: You have no tools. Everything you need to say is in the workflow \
-payload provided below.
+Everything you need to say is in the workflow payload provided below.
 """
+
+
+def _booking_so_far(state) -> dict:
+    """Everything the user has settled so far, for the speaker's payload."""
+    so_far = {
+        slot: getattr(state, slot)
+        for slot in (
+            "area", "date", "surface", "indoor_outdoor", "duration_minutes", "num_players",
+            "selected_time", "skill_level", "equipment_rental", "contact_name", "contact_email",
+        )
+        if getattr(state, slot) not in (None, "")
+    }
+    court = next((c for c in state.available_courts if c.court_id == state.selected_court_id), None)
+    if court is not None:
+        slot = next((s for s in court.slots if s.time == state.selected_time), None)
+        so_far["selected_court"] = {
+            "name": court.name,
+            "address": court.address,
+            **({"price_usd": slot.price_usd} if slot else {}),
+        }
+    return so_far
 
 
 def create_agent(state=None, client=None, interpreter: Interpreter | None = None) -> ConversationAgent:
@@ -111,14 +137,14 @@ def create_agent(state=None, client=None, interpreter: Interpreter | None = None
                 ToolCallRecord(turn=agent._turn, name=internal.name, args=internal.args, result=internal.result, agentic=False)
             )
 
-        # Build speaker prompt with payload and interpretation context
-        applied_str = ""
-        if isinstance(payload, dict) and payload.get("applied"):
-            applied_str = f"\nApplied updates: {json.dumps(payload['applied'])}"
-
-        errors_str = ""
-        if isinstance(payload, dict) and payload.get("errors"):
-            errors_str = f"\nErrors: {json.dumps(payload['errors'])}"
+        # Build speaker prompt with payload and interpretation context. The
+        # speaker only needs the current step, so drop the lookahead and slot
+        # names, and add the whole booking so far (the payload's `applied`
+        # only lists this turn's changes).
+        speaker_payload = payload
+        if isinstance(payload, dict):
+            speaker_payload = {k: v for k, v in payload.items() if k not in ("upcoming_instructions", "current_node_slots")}
+            speaker_payload["booking_so_far"] = _booking_so_far(engine_holder["current"].state)
 
         ambiguities_str = ""
         if result.ambiguities:
@@ -135,8 +161,8 @@ def create_agent(state=None, client=None, interpreter: Interpreter | None = None
         user_addendum = f"""\
 
 [Workflow payload]
-{json.dumps(payload, indent=2)}
-{applied_str}{errors_str}{ambiguities_str}{act_hint_str}
+{json.dumps(speaker_payload, separators=(",", ":"))}
+{ambiguities_str}{act_hint_str}
 """
 
         # Make a single speaker call (no tools)
@@ -165,6 +191,8 @@ def create_agent(state=None, client=None, interpreter: Interpreter | None = None
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
                 latency_ms=latency_ms,
+                reasoning_tokens=usage_details(response.usage)[0],
+                cached_tokens=usage_details(response.usage)[1],
             )
         )
 

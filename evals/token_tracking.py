@@ -35,6 +35,8 @@ class UsageSample:
     latency_ms: float = 0.0
     cost_usd: float | None = None
     source: str = "llm"  # "llm" or "jev" -- see UsageRecord.source
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,8 @@ def record_usage(agent_id: str, agent: ConversationAgent, model: str | None = No
                 latency_ms=getattr(record, "latency_ms", 0.0),
                 cost_usd=cost_usd,
                 source=source,
+                reasoning_tokens=getattr(record, "reasoning_tokens", 0),
+                cached_tokens=getattr(record, "cached_tokens", 0),
             )
         )
     _TURN_SAMPLES.append(

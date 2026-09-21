@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from collections import Counter
+
 from tennis_booking.models import CourtAvailability
 from tennis_booking.tools.live_courts import LiveCourtLookupError, find_nearby_courts
 
@@ -41,6 +43,18 @@ SEARCH_AVAILABILITY_TOOL: dict[str, Any] = {
 }
 
 
+def _label_duplicate_names(courts: list[CourtAvailability]) -> None:
+    """Live results can contain several courts with an identical name (e.g.
+    five "Tennis Court"s in one park), which no name/`court_hint` can tell
+    apart. Number them in place ("Tennis Court 1", "Tennis Court 2", ...)."""
+    totals = Counter(c.name for c in courts)
+    seen: Counter = Counter()
+    for c in courts:
+        if totals[c.name] > 1:
+            seen[c.name] += 1
+            c.name = f"{c.name} {seen[c.name]}"
+
+
 def run_search_availability(args: dict) -> tuple[dict, list[CourtAvailability]]:
     """Execute search_availability. Returns (tool_result_for_model, raw_courts).
 
@@ -67,6 +81,7 @@ def run_search_availability(args: dict) -> tuple[dict, list[CourtAvailability]]:
         # relay and recover from, not an exception that kills the turn.
         return {"error": str(e)}, []
 
+    _label_duplicate_names(courts)
     result = {
         "courts": [
             {

@@ -92,6 +92,14 @@ class ToolCallRecord:
     agentic: bool = True
 
 
+def usage_details(usage: Any) -> tuple[int, int]:
+    """(reasoning_tokens, cached_tokens) from a chat-completions `usage`
+    object; 0 for either when the provider doesn't report it."""
+    out = getattr(usage, "completion_tokens_details", None)
+    inp = getattr(usage, "prompt_tokens_details", None)
+    return (getattr(out, "reasoning_tokens", 0) or 0, getattr(inp, "cached_tokens", 0) or 0)
+
+
 @dataclass
 class UsageRecord:
     """Token usage (+ latency) for one model call. `input_tokens` is the
@@ -121,6 +129,10 @@ class UsageRecord:
     output_tokens: int
     latency_ms: float = 0.0
     cost_usd: float | None = None
+    # Both are subsets of the totals above, as reported by the provider:
+    # `reasoning_tokens` of `output_tokens`, `cached_tokens` of `input_tokens`.
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
     # "llm" for a chat-completions call, "jev" for a TypeSafe interpretation
     # call -- reported separately since they're different models with
     # different pricing (see evals/report.py).
@@ -215,6 +227,8 @@ class ConversationAgent:
                     input_tokens=response.usage.prompt_tokens,
                     output_tokens=response.usage.completion_tokens,
                     latency_ms=latency_ms,
+                    reasoning_tokens=usage_details(response.usage)[0],
+                    cached_tokens=usage_details(response.usage)[1],
                 )
             )
             message = response.choices[0].message
