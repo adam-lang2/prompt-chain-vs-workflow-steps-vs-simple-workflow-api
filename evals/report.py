@@ -39,8 +39,6 @@ class AgentReportRow:
     total_input_tokens: int
     avg_output_tokens: float
     total_output_tokens: int
-    total_reasoning_tokens: int
-    total_cached_tokens: int
     total_cost_usd: float | None
     latency_p50_ms: float
     latency_p90_ms: float
@@ -92,8 +90,7 @@ class ComparisonReport:
                 f"avg input={row.avg_input_tokens:,.0f} tok/call | "
                 f"avg output={row.avg_output_tokens:,.0f} tok/call | "
                 f"total input={row.total_input_tokens:,} | "
-                f"total output={row.total_output_tokens:,} (reasoning={row.total_reasoning_tokens:,}) | "
-                f"cached input={row.total_cached_tokens:,} | "
+                f"total output={row.total_output_tokens:,} | "
                 f"jev calls={row.jev_calls} input={row.jev_input_tokens:,} output={row.jev_output_tokens:,} "
                 f"latency p50={row.jev_latency_p50_ms:,.0f}ms p90={row.jev_latency_p90_ms:,.0f}ms "
                 f"total={row.jev_total_latency_ms:,.0f}ms | "
@@ -112,13 +109,12 @@ class ComparisonReport:
         if not self.rows:
             return "_No comparison data collected this run._"
         header = (
-            "| Agent | Model | LLM calls | LLM input tok | LLM cached input tok | LLM output tok | "
-            "LLM reasoning tok | "
+            "| Agent | Model | LLM calls | LLM input tok | LLM output tok | "
             "Jev calls | Jev input tok | Jev output tok | LLM cost | Jev cost | Total cost | "
             "LLM latency p50 | LLM latency p90 | Jev latency p50 | Jev latency p90 | "
             "Max tool calls/turn | Turn latency p50 | "
             "Turn latency p90 | Passed |\n"
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
         )
         lines = [header]
         for row in self.rows:
@@ -128,8 +124,7 @@ class ComparisonReport:
             )
             lines.append(
                 f"| {row.agent_id} | {row.model} | {row.num_calls} | {row.total_input_tokens:,} | "
-                f"{row.total_cached_tokens:,} | {row.total_output_tokens:,} | "
-                f"{row.total_reasoning_tokens:,} | {row.jev_calls or '—'} | "
+                f"{row.total_output_tokens:,} | {row.jev_calls or '—'} | "
                 f"{row.jev_input_tokens:,} | {row.jev_output_tokens:,} | "
                 f"{cost} | {_usd(row.jev_cost_usd) if row.jev_calls else '—'} | {_usd(row.combined_cost_usd)} | "
                 f"{row.latency_p50_ms:,.0f}ms | {row.latency_p90_ms:,.0f}ms | "
@@ -158,8 +153,6 @@ class ComparisonReport:
                     "total_input_tokens": row.total_input_tokens,
                     "avg_output_tokens": row.avg_output_tokens,
                     "total_output_tokens": row.total_output_tokens,
-                    "total_reasoning_tokens": row.total_reasoning_tokens,
-                    "total_cached_tokens": row.total_cached_tokens,
                     "total_cost_usd": row.total_cost_usd,
                     "jev_calls": row.jev_calls,
                     "jev_input_tokens": row.jev_input_tokens,
@@ -243,8 +236,6 @@ def build_report(agent_ids: list[str] | None = None) -> ComparisonReport:
             avg_output = stats.mean(output_toks)
             total_input = sum(input_toks)
             total_output = sum(output_toks)
-            total_reasoning = sum(s.reasoning_tokens for s in key_samples)
-            total_cached = sum(s.cached_tokens for s in key_samples)
             total_cost = sum(costs) if costs else None
             p50 = stats.percentile(latencies, 50) if latencies else 0.0
             p90 = stats.percentile(latencies, 90) if latencies else 0.0
@@ -252,7 +243,7 @@ def build_report(agent_ids: list[str] | None = None) -> ComparisonReport:
         else:
             num_calls = 0
             avg_input = avg_output = 0.0
-            total_input = total_output = total_reasoning = total_cached = 0
+            total_input = total_output = 0
             total_cost = None
             p50 = p90 = total_latency = 0.0
 
@@ -269,8 +260,6 @@ def build_report(agent_ids: list[str] | None = None) -> ComparisonReport:
                 total_input_tokens=total_input,
                 avg_output_tokens=avg_output,
                 total_output_tokens=total_output,
-                total_reasoning_tokens=total_reasoning,
-                total_cached_tokens=total_cached,
                 total_cost_usd=total_cost,
                 latency_p50_ms=p50,
                 latency_p90_ms=p90,

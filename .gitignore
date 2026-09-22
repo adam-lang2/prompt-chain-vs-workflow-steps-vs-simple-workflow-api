@@ -17,6 +17,7 @@ wheels/
 
 # Working notes, blog drafts, image assets -- local only, never published
 docs/
+hashnode-backup/
 
 # Test/eval artifacts
 .pytest_cache/
