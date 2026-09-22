@@ -8,20 +8,29 @@ import json
 import time
 from dataclasses import field
 
-from tennis_booking.agents.base import PROVIDER_ROUTING, ConversationAgent, ToolCallRecord, UsageRecord, usage_details
+from tennis_booking.agents.base import PROVIDER_ROUTING, ConversationAgent, ToolCallRecord, UsageRecord, reasoning_text, usage_details
 from tennis_booking.jev.apply import to_updates
 from tennis_booking.jev.interpret import Interpretation, Interpreter
 from tennis_booking.jev.interpreter import JevInterpreter
 from tennis_booking.workflow_engine import BookingWorkflowEngine
 
 SYSTEM_PROMPT = f"""\
-You are a tennis court booking assistant. Your job is to:
-- Acknowledge what the user said based on structured information extracted from \
-their message.
-- Present exactly what you see in the workflow engine's current payload: \
-available courts, booking summary, confirmation, etc.
+You are the speaking voice for a tennis court booking workflow. Every \
+decision -- what's been settled so far, what to ask next, what's true -- was \
+already made by the workflow engine before this call, and its output arrives \
+below as a tool result. You don't call tools, verify anything, or decide \
+anything yourself: your only job is turning that payload into a short, \
+natural reply.
+
+- Acknowledge what the user said based on structured information extracted \
+from their message.
+- Present exactly what you see in the payload: available courts, booking \
+summary, confirmation, etc.
 - Never invent information.
-- Ask the next question, only from what the workflow engine says to ask.
+- Ask the next question, only from what the payload says to ask. If the \
+payload lists an ambiguity to clarify, that IS the next question -- fold it \
+into your message instead of also asking the current step's question, and \
+don't deliberate over which one takes priority.
 - Keep messages short and conversational.
 
 Grounding:
@@ -30,12 +39,12 @@ payload (`available_courts` or `booking_so_far`). Never state or imply a \
 time, court or price that is not there.
 - If the user asks for a time that is not in `available_courts`, say so \
 plainly and offer only the times that are.
-- You have no tools and never look anything up. The workflow engine re-runs \
-any search itself when a preference changes. If the payload shows a changed \
-preference, just acknowledge it and ask the payload's next question.
+- A price like `31.3` may be shown as `$31.30` -- that's formatting, not \
+rounding or inventing. Never change the numeric value itself.
+- The workflow engine re-runs any search itself when a preference changes. \
+If the payload shows a changed preference, just acknowledge it and ask the \
+payload's next question.
 - A booking is only real once the payload contains a confirmation_id.
-
-Everything you need to say is in the workflow payload provided below.
 """
 
 
@@ -109,6 +118,7 @@ def create_agent(state=None, client=None, interpreter: Interpreter | None = None
             interp,
             engine_holder["current"].state,
             current_node=engine_holder["current"].peek().get("current_node"),
+            user_turn=text,
         )
 
         before = len(engine_holder["current"].internal_tool_calls)
@@ -146,30 +156,46 @@ def create_agent(state=None, client=None, interpreter: Interpreter | None = None
             speaker_payload = {k: v for k, v in payload.items() if k not in ("upcoming_instructions", "current_node_slots")}
             speaker_payload["booking_so_far"] = _booking_so_far(engine_holder["current"].state)
 
-        ambiguities_str = ""
         if result.ambiguities:
-            ambiguities_str = f"\nAmbiguities to clarify: {', '.join(result.ambiguities)}"
+            speaker_payload["ambiguities_to_clarify"] = result.ambiguities
 
-        act_hint_str = ""
         if result.act == "asks_question":
-            act_hint_str = "\nUser is asking a question. Answer only from the workflow payload, then ask the current step's question again."
+            speaker_payload["note"] = "User is asking a question. Answer only from this payload, then ask the current step's question again."
         elif result.act == "off_topic":
-            act_hint_str = "\nUser said something off-topic. Politely redirect to the booking."
+            speaker_payload["note"] = "User said something off-topic. Politely redirect to the booking."
         elif result.act == "restart_or_cancel":
-            act_hint_str = "\nUser asked to restart or cancel. Acknowledge and show the first question."
+            speaker_payload["note"] = "User asked to restart or cancel. Acknowledge and show the first question."
 
-        user_addendum = f"""\
-
-[Workflow payload]
-{json.dumps(speaker_payload, separators=(",", ":"))}
-{ambiguities_str}{act_hint_str}
-"""
-
-        # Make a single speaker call (no tools)
+        # Deliver the payload as a tool result, not spliced into a user
+        # message: a `tool`-role message is the channel the model was
+        # actually fine-tuned to treat as ground truth to quote, the same
+        # channel simple_workflow_api's real tool calls use. Handed to it
+        # as user-authored text instead, the model tends to treat it as
+        # prose to compose rather than data to cite, second-guessing
+        # verbatim values (a price's decimal formatting, a court's exact
+        # name) that a real tool result would just be trusted as-is. The
+        # `tool_calls`/`tool` pair below is synthetic -- the speaker never
+        # actually calls a tool -- but it's the same message shape.
+        tool_call_id = f"workflow_payload_turn_{agent._turn}"
         request_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             *agent.messages,
-            {"role": "user", "content": user_addendum},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {"name": "get_workflow_payload", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": json.dumps(speaker_payload, separators=(",", ":")),
+            },
         ]
 
         extra_body: dict = {"provider": PROVIDER_ROUTING}
@@ -193,6 +219,7 @@ def create_agent(state=None, client=None, interpreter: Interpreter | None = None
                 latency_ms=latency_ms,
                 reasoning_tokens=usage_details(response.usage)[0],
                 cached_tokens=usage_details(response.usage)[1],
+                reasoning_text=reasoning_text(response),
             )
         )
 

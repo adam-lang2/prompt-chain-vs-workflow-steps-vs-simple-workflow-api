@@ -100,6 +100,15 @@ def usage_details(usage: Any) -> tuple[int, int]:
     return (getattr(out, "reasoning_tokens", 0) or 0, getattr(inp, "cached_tokens", 0) or 0)
 
 
+def reasoning_text(response: Any) -> str:
+    """The model's reasoning text from a chat-completions response. OpenRouter
+    returns it as a non-standard `reasoning` field on the message (the OpenAI
+    SDK keeps unknown fields in `model_extra`); "" when the model sent none."""
+    message = response.choices[0].message
+    extra = getattr(message, "model_extra", None) or {}
+    return getattr(message, "reasoning", None) or extra.get("reasoning") or extra.get("reasoning_content") or ""
+
+
 @dataclass
 class UsageRecord:
     """Token usage (+ latency) for one model call. `input_tokens` is the
@@ -133,6 +142,8 @@ class UsageRecord:
     # `reasoning_tokens` of `output_tokens`, `cached_tokens` of `input_tokens`.
     reasoning_tokens: int = 0
     cached_tokens: int = 0
+    # The provider's reasoning text for this call, "" when none was returned.
+    reasoning_text: str = ""
     # "llm" for a chat-completions call, "jev" for a TypeSafe interpretation
     # call -- reported separately since they're different models with
     # different pricing (see evals/report.py).
@@ -229,6 +240,7 @@ class ConversationAgent:
                     latency_ms=latency_ms,
                     reasoning_tokens=usage_details(response.usage)[0],
                     cached_tokens=usage_details(response.usage)[1],
+                    reasoning_text=reasoning_text(response),
                 )
             )
             message = response.choices[0].message

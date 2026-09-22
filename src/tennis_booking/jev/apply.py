@@ -18,7 +18,11 @@ class ApplyResult:
 
 
 def to_updates(
-    interp: Interpretation, state: BookingState, threshold: float = 0.6, current_node: str | None = None
+    interp: Interpretation,
+    state: BookingState,
+    threshold: float = 0.6,
+    current_node: str | None = None,
+    user_turn: str | None = None,
 ) -> ApplyResult:
     """Convert an Interpretation into state updates and ambiguities.
 
@@ -29,6 +33,12 @@ def to_updates(
     - restart_or_cancel sets restart=True
     - equipment_rental yes/no -> bool
     - duration_minutes, num_players -> int
+
+    `user_turn` (the raw text of the user's message this turn, if given) is
+    folded into any ambiguity string below -- a bare slot name like "surface"
+    forces the speaker to replay the whole conversation to guess what's
+    actually unclear; the guessed value + the user's own words let it resolve
+    the ambiguity directly instead.
     """
     updates_list: list[dict] = []
     ambiguities_list: list[str] = []
@@ -48,7 +58,11 @@ def to_updates(
             already_set = getattr(state, slot_name, None) not in (None, "")
             if already_set and interp.act != "corrects_earlier":
                 continue
-            ambiguities_list.append(f"Unclear what the user meant for {slot_name}")
+            guess = f"best guess {value!r} at {confidence:.0%} confidence"
+            if user_turn:
+                ambiguities_list.append(f"Unclear what the user meant for {slot_name} ({guess}) in: {user_turn!r}")
+            else:
+                ambiguities_list.append(f"Unclear what the user meant for {slot_name} ({guess})")
             continue
 
         # Type coercion
