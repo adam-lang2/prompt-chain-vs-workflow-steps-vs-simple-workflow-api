@@ -14,6 +14,17 @@ from tennis_booking.jev.interpret import Interpretation, Interpreter
 from tennis_booking.jev.interpreter import JevInterpreter
 from tennis_booking.workflow_engine import BookingWorkflowEngine
 
+# jev's speaker call is tool-less, low-decision text generation (see
+# SYSTEM_PROMPT below) -- a small non-reasoning model does this job as
+# reliably as a bigger reasoning model, faster and far cheaper, with no
+# reasoning-token overhead to fight. Measured against `agents.base.DEFAULT_MODEL`
+# (deepseek-v4-flash) on the standard suite: same 11/11 pass rate, ~4x
+# cheaper LLM cost, better p90 latency. See results/jev-gemma-3-12b.md.
+# Overridable per-run the same way any agent's model is (e.g.
+# `evals/compare.py --model ...`); this is only the default when nothing
+# else sets `.model`.
+JEV_SPEAKER_MODEL = "google/gemma-3-12b-it"
+
 SYSTEM_PROMPT = f"""\
 You are the speaking voice for a tennis court booking workflow. Every \
 decision -- what's been settled so far, what to ask next, what's true -- was \
@@ -234,6 +245,7 @@ def create_agent(state=None, client=None, interpreter: Interpreter | None = None
         system_prompt=SYSTEM_PROMPT,
         tools=[],
         tool_executors={},
+        model=JEV_SPEAKER_MODEL,
         client=client,
     )
 

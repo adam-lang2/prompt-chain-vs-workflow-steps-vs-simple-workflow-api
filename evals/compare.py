@@ -111,6 +111,26 @@ def _resolve_out_path(out_arg: str | None, fmt: str) -> Path:
     return candidate
 
 
+def _render_scenario_detail(agent_id: str, model_spec: str, scenario_name: str, seconds: float, conv) -> str:
+    lines = [f"### {agent_id} / {scenario_name} — {seconds:.1f}s, {conv.turn_count} turns", ""]
+    for turn, latency in enumerate(conv.turn_latencies_ms, start=1):
+        lines.append(f"- turn {turn}: {latency:,.0f}ms")
+    lines.append("")
+    for n, u in enumerate(conv.usage_log, start=1):
+        lines.append(
+            f"**call {n}** turn {u.turn} `{u.source}` — {u.latency_ms:,.0f}ms, "
+            f"in={u.input_tokens:,} (cached {u.cached_tokens:,}), out={u.output_tokens:,} (reasoning {u.reasoning_tokens:,})"
+        )
+        if u.reasoning_text:
+            lines += ["", "```text", u.reasoning_text.strip(), "```"]
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _render_details(details: list[str]) -> str:
+    return "## Per-scenario timing and reasoning text\n\n" + "\n".join(details)
+
+
 def _patch_live_courts() -> None:
     """Replace the two real-network calls with the recorded cassette, same
     as `evals/conftest.py`'s autouse `_recorded_court_lookups` fixture does
@@ -190,30 +210,47 @@ def main(argv: list[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 1
 
+    # `--model` explicitly requested -> override every agent onto it (the
+    # existing A/B-across-models behavior). No `--model` -> each agent keeps
+    # its own create()-time default (e.g. jev defaults to
+    # JEV_SPEAKER_MODEL, others to agents.base.DEFAULT_MODEL), which may
+    # differ agent-to-agent -- report.py groups by (agent_id, model), so
+    # that's shown as separate rows/model columns, not conflated.
+    explicit_models = args.models is not None
     models = args.models or [DEFAULT_MODEL]
     _patch_live_courts()
+    details: list[str] = []  # per-scenario timing + per-call reasoning text, appended to the report file
 
     for model_spec in models:
         model, reasoning_effort = _parse_model_spec(model_spec)
         for agent_id in agent_ids:
             agent = AGENTS_BY_ID[agent_id]
-            print(f"Running {agent.id} [{model_spec}] against {len(STANDARD_SUITE)} scenarios...", file=sys.stderr)
+            label = model_spec if explicit_models else "each agent's own default model"
+            print(f"Running {agent.id} [{label}] against {len(STANDARD_SUITE)} scenarios...", file=sys.stderr)
             for i, scenario in enumerate(STANDARD_SUITE):
                 scenario_start = time.perf_counter()
                 print(f"  [{i + 1}/{len(STANDARD_SUITE)}] {scenario.name} ...", file=sys.stderr, flush=True)
                 conversation_agent = agent.create()
-                conversation_agent.model = model
+                if explicit_models:
+                    conversation_agent.model = model
                 if reasoning_effort is not None:
                     conversation_agent.reasoning_effort = reasoning_effort
                 run_scripted_scenario(conversation_agent, scenario)
-                print(f"  [{i + 1}/{len(STANDARD_SUITE)}] {scenario.name} done in {time.perf_counter() - scenario_start:.1f}s", file=sys.stderr, flush=True)
-                record_usage(agent.id, conversation_agent, model=model_spec)
+                scenario_seconds = time.perf_counter() - scenario_start
+                print(f"  [{i + 1}/{len(STANDARD_SUITE)}] {scenario.name} done in {scenario_seconds:.1f}s", file=sys.stderr, flush=True)
+                # Group/report under the model actually used, not `model_spec`,
+                # when it wasn't an explicit override -- otherwise every agent
+                # would misleadingly show up under DEFAULT_MODEL regardless of
+                # what it actually ran.
+                report_model = model_spec if explicit_models else conversation_agent.model
+                details.append(_render_scenario_detail(agent.id, report_model, scenario.name, scenario_seconds, conversation_agent))
+                record_usage(agent.id, conversation_agent, model=report_model)
                 score = score_conversation(
                     tool_call_log=conversation_agent.tool_call_log,
                     expected=scenario.expected,
                     num_turns=len(scenario.turns),
                 )
-                record_result(agent.id, model_spec, scenario.name, score)
+                record_result(agent.id, report_model, scenario.name, score)
 
     report = build_report(agent_ids=agent_ids)
     rendered = {
@@ -224,6 +261,8 @@ def main(argv: list[str] | None = None) -> int:
 
     with open(out_path, "w") as f:
         f.write(rendered + "\n")
+        if args.format == "markdown":
+            f.write("\n" + _render_details(details) + "\n")
     print(f"Report written to {out_path}", file=sys.stderr)
     print(rendered)
 

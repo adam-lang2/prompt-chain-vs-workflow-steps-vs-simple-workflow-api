@@ -20,6 +20,11 @@ PRICE_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
     "deepseek/deepseek-v4-flash-20260731": (0.20, 0.60),
     "openai/gpt-4o-mini": (0.15, 0.60),
     "openai/gpt-5.6-luna": (0.20, 1.20),
+    # Measured directly from OpenRouter's own response.usage.cost (via
+    # `usage: {"include": true}`), not the /models listing -- see
+    # results/jev-gemma-3-12b.md. $0.05/$0.15 per 1M in/out tokens via
+    # DeepInfra at the time this was measured.
+    "google/gemma-3-12b-it": (0.05, 0.15),
 }
 
 # TypeSafe Jev: $0.042/MTok input, output is free.
